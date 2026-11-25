@@ -1,0 +1,15 @@
+{
+  "name": "ai-kit",
+  "version": "2.1.0",
+  "description": "Biblioteca central multi-IA (OpenSpec SDD) endurecida anti-vibe-coding com sync protegido, doctor, telemetry, hooks, stack packs e Studio web local.",
+  "private": true,
+  "bin": {
+    "ai-kit": "./bin/ai-kit.cjs"
+  },
+  "scripts": {
+    "studio": "node ./bin/ai-kit.cjs studio"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

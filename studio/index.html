@@ -1,0 +1,1766 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI-Kit Studio v2.1 — Gestão, Guardrails & Playbooks</title>
+  <style>
+    :root {
+      --bg: #0b0e14;
+      --bg-elev: #111622;
+      --bg-card: #151b29;
+      --bg-input: #0e131d;
+      --border: #232c40;
+      --border-strong: #32405d;
+      --text: #e6edf7;
+      --text-muted: #93a1bc;
+      --text-dim: #667594;
+      --accent: #6366f1;
+      --accent-hover: #7c7ff6;
+      --accent-soft: rgba(99, 102, 241, 0.14);
+      --ok: #22c55e;
+      --ok-soft: rgba(34, 197, 94, 0.14);
+      --warn: #f59e0b;
+      --warn-soft: rgba(245, 158, 11, 0.14);
+      --err: #ef4444;
+      --err-soft: rgba(239, 68, 68, 0.14);
+      --info: #38bdf8;
+      --info-soft: rgba(56, 189, 248, 0.14);
+      --radius: 10px;
+      --mono: "Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+    }
+
+    [data-theme="light"] {
+      --bg: #f4f6fb;
+      --bg-elev: #ffffff;
+      --bg-card: #ffffff;
+      --bg-input: #f8fafc;
+      --border: #dde3ef;
+      --border-strong: #c3cde0;
+      --text: #111827;
+      --text-muted: #4b5563;
+      --text-dim: #6b7280;
+      --accent: #4f46e5;
+      --accent-hover: #4338ca;
+      --accent-soft: rgba(79, 70, 229, 0.1);
+      --ok: #16a34a;
+      --ok-soft: rgba(22, 163, 74, 0.12);
+      --warn: #d97706;
+      --warn-soft: rgba(217, 119, 6, 0.12);
+      --err: #dc2626;
+      --err-soft: rgba(220, 38, 38, 0.12);
+      --info: #0284c7;
+      --info-soft: rgba(2, 132, 199, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 248px 1fr;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      background: var(--bg-elev);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 18px 14px;
+      gap: 16px;
+      overflow-y: auto;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 8px;
+    }
+    .brand-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: -0.02em;
+    }
+    .brand-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent), #22c55e);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 800;
+      font-size: 13px;
+    }
+    .version-pill {
+      font-size: 11px;
+      font-family: var(--mono);
+      padding: 2px 7px;
+      border-radius: 99px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .nav {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .nav-section {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      padding: 10px 10px 4px;
+      font-weight: 600;
+    }
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding: 9px 11px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 13.5px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.12s ease;
+    }
+    .nav-btn:hover {
+      background: var(--bg-card);
+      color: var(--text);
+    }
+    .nav-btn.active {
+      background: var(--accent-soft);
+      color: var(--text);
+      border-color: rgba(99, 102, 241, 0.35);
+      font-weight: 600;
+    }
+    .nav-left {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .nav-count {
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--text-dim);
+      background: var(--bg);
+      padding: 1px 6px;
+      border-radius: 6px;
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .kit-path {
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--text-dim);
+      word-break: break-all;
+      background: var(--bg);
+      padding: 7px 9px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+    }
+
+    /* Main */
+    .main {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-elev);
+      gap: 12px;
+    }
+    .topbar-title h1 {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .topbar-title p {
+      margin: 2px 0 0;
+      font-size: 12.5px;
+      color: var(--text-muted);
+    }
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 22px 24px 32px;
+    }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    /* Buttons & Inputs */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 13px;
+      border-radius: 8px;
+      border: 1px solid var(--border-strong);
+      background: var(--bg-card);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.12s ease;
+    }
+    .btn:hover { border-color: var(--accent); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-danger {
+      background: var(--err-soft);
+      border-color: rgba(239, 68, 68, 0.35);
+      color: var(--err);
+    }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+    input[type="text"], input[type="search"], select, textarea {
+      width: 100%;
+      background: var(--bg-input);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 11px;
+      font-family: var(--sans);
+      font-size: 13px;
+      outline: none;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+    }
+    label.field-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 5px;
+    }
+
+    /* Cards & Grids */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .kpi-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+    .kpi-value {
+      font-size: 24px;
+      font-weight: 700;
+      margin: 6px 0 4px;
+      letter-spacing: -0.02em;
+      font-family: var(--mono);
+    }
+    .kpi-sub {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.25fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 1060px) {
+      .grid-2 { grid-template-columns: 1fr; }
+      .app { grid-template-columns: 210px 1fr; }
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      gap: 10px;
+    }
+    .card-header h2 {
+      margin: 0;
+      font-size: 14.5px;
+      font-weight: 700;
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-family: var(--mono);
+      white-space: nowrap;
+    }
+    .badge-ok { background: var(--ok-soft); color: var(--ok); }
+    .badge-warn { background: var(--warn-soft); color: var(--warn); }
+    .badge-err { background: var(--err-soft); color: var(--err); }
+    .badge-info { background: var(--info-soft); color: var(--info); }
+    .badge-accent { background: var(--accent-soft); color: var(--accent); }
+    .badge-muted { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+
+    /* Guardrails list */
+    .guard-list {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+    .guard-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+    }
+    .guard-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 99px;
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 800;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .guard-icon.ok { background: var(--ok-soft); color: var(--ok); }
+    .guard-icon.err { background: var(--err-soft); color: var(--err); }
+    .guard-title { font-weight: 600; font-size: 13px; }
+    .guard-detail { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+    /* Token bars */
+    .bar-row {
+      margin-bottom: 11px;
+    }
+    .bar-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12.5px;
+      margin-bottom: 4px;
+    }
+    .bar-track {
+      height: 8px;
+      background: var(--bg);
+      border-radius: 99px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--info));
+      border-radius: 99px;
+    }
+
+    /* Catalog & Editor split */
+    .catalog-layout {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 16px;
+      height: calc(100vh - 125px);
+      min-height: 520px;
+    }
+    .catalog-list-pane {
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .catalog-filters {
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .catalog-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .file-row {
+      padding: 9px 10px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.1s ease;
+    }
+    .file-row:hover { background: var(--bg-input); }
+    .file-row.active {
+      background: var(--accent-soft);
+      border-color: rgba(99, 102, 241, 0.45);
+    }
+    .file-row-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .file-row-path {
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--text-dim);
+      margin-top: 2px;
+      word-break: break-all;
+    }
+    .file-row-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 6px;
+    }
+
+    .editor-pane {
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .editor-head {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .editor-warnings {
+      padding: 10px 16px;
+      background: var(--warn-soft);
+      border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+      color: var(--warn);
+      font-size: 12.5px;
+      display: none;
+    }
+    .editor-textarea {
+      flex: 1;
+      width: 100%;
+      border: none;
+      border-radius: 0;
+      background: var(--bg-input);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.55;
+      padding: 16px;
+      resize: none;
+      tab-size: 2;
+    }
+    .editor-foot {
+      padding: 8px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-family: var(--mono);
+      color: var(--text-muted);
+    }
+
+    /* Terminal */
+    .terminal {
+      background: #070a10;
+      color: #d6e2f5;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.55;
+      padding: 14px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 440px;
+      overflow-y: auto;
+    }
+    .t-ok { color: #4ade80; }
+    .t-warn { color: #fbbf24; }
+    .t-err { color: #f87171; }
+    .t-info { color: #38bdf8; }
+
+    /* Code block with Copy */
+    .code-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+    .code-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: var(--bg-elev);
+      border-bottom: 1px solid var(--border);
+      gap: 10px;
+    }
+    .code-card-title {
+      font-weight: 600;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .code-pre {
+      margin: 0;
+      padding: 14px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: var(--bg-input);
+      max-height: 360px;
+      overflow-y: auto;
+    }
+
+    /* Form grids */
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .stack-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .stack-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      cursor: pointer;
+      font-size: 12.5px;
+      user-select: none;
+    }
+    .stack-pill input { width: auto; margin: 0; }
+    .stack-pill.checked {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      font-weight: 600;
+    }
+
+    /* Step pill */
+    .step-badge {
+      width: 24px;
+      height: 24px;
+      border-radius: 99px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      display: inline-grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 12px;
+      font-family: var(--mono);
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 16px;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      width: 100%;
+      max-width: 520px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border-strong);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+    }
+    .modal h3 { margin: 0 0 14px; font-size: 16px; }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border-strong);
+      padding: 10px 16px;
+      border-radius: 9px;
+      font-size: 13px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+      opacity: 0;
+      transform: translateY(10px);
+      pointer-events: none;
+      transition: all 0.2s ease;
+      z-index: 200;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.ok { border-left: 4px solid var(--ok); }
+    .toast.err { border-left: 4px solid var(--err); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-title">
+          <div class="brand-dot">AK</div>
+          <span>AI-Kit Studio</span>
+        </div>
+        <span class="version-pill" id="kit-version">v2.1</span>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-section">Governança</div>
+        <button class="nav-btn active" data-tab="overview">
+          <span class="nav-left"><span>◉</span> Visão Geral & Guardrails</span>
+          <span class="nav-count" id="nav-guard-score">—</span>
+        </button>
+        <button class="nav-btn" data-tab="catalog">
+          <span class="nav-left"><span>▤</span> Catálogo & Editor</span>
+          <span class="nav-count" id="nav-file-count">0</span>
+        </button>
+        <button class="nav-btn" data-tab="ops">
+          <span class="nav-left"><span>⌘</span> Operações (CLI)</span>
+        </button>
+
+        <div class="nav-section">Playbooks Prontos</div>
+        <button class="nav-btn" data-tab="greenfield">
+          <span class="nav-left"><span>✦</span> Projeto Novo</span>
+          <span class="nav-count">Green</span>
+        </button>
+        <button class="nav-btn" data-tab="brownfield">
+          <span class="nav-left"><span>↻</span> Projeto Existente</span>
+          <span class="nav-count">Brown</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="btn btn-primary" id="btn-new-item-side">+ Novo Item no Kit</button>
+        <button class="btn btn-sm" id="btn-toggle-theme">Alternar Tema (Claro/Escuro)</button>
+        <div class="kit-path" id="kit-root-path">Carregando repositório...</div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div class="topbar-title">
+          <h1 id="page-title">Visão Geral & Guardrails Anti-Vibe-Coding</h1>
+          <p id="page-subtitle">Orçamento de tokens, integridade do Core agnóstico e blindagens determinísticas v2.1.</p>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-sm" id="btn-refresh">↻ Recarregar Disco</button>
+          <button class="btn btn-primary btn-sm" id="btn-new-item-top">+ Novo Item</button>
+        </div>
+      </header>
+
+      <main class="content">
+        <!-- TAB 1: OVERVIEW -->
+        <section class="tab-pane active" id="tab-overview">
+          <div class="kpi-grid" id="kpi-grid"></div>
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header">
+                <h2>Blindagens Anti-Vibe-Coding (v2.1)</h2>
+                <span class="badge badge-ok" id="guardrails-badge">—</span>
+              </div>
+              <div class="guard-list" id="guard-list"></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:16px;">
+              <div class="card">
+                <div class="card-header">
+                  <h2>Distribuição de Tokens por Camada</h2>
+                  <span class="badge badge-info">~4 bytes/token</span>
+                </div>
+                <div id="token-bars"></div>
+              </div>
+              <div class="card">
+                <div class="card-header">
+                  <h2>Top 6 Arquivos Mais Pesados (Candidatos a Enxugar)</h2>
+                </div>
+                <div id="heaviest-list"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 2: CATALOG & EDITOR -->
+        <section class="tab-pane" id="tab-catalog">
+          <div class="catalog-layout">
+            <div class="catalog-list-pane">
+              <div class="catalog-filters">
+                <input type="search" id="search-input" placeholder="Buscar skill, rule, hook, stack..." />
+                <div style="display:flex;gap:8px;">
+                  <select id="category-filter">
+                    <option value="all">Todas as categorias</option>
+                    <option value="skill-shared">Shared (Gemini & Claude)</option>
+                    <option value="skill-agent">Planejador (.agent) — Skills</option>
+                    <option value="rule-agent">Planejador (.agent) — Rules</option>
+                    <option value="skill-claude">Executor (.claude) — Skills</option>
+                    <option value="rule-geral">Executor (.claude) — Rules Geral</option>
+                    <option value="agent">Subagentes (.claude)</option>
+                    <option value="hook">Hooks (.cjs)</option>
+                    <option value="stack">Stack Packs</option>
+                    <option value="config">Configuração Core</option>
+                    <option value="meta">Metadados do Kit</option>
+                  </select>
+                </div>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);cursor:pointer;">
+                  <input type="checkbox" id="only-warnings" style="width:auto;" />
+                  Mostrar somente itens com alertas
+                </label>
+              </div>
+              <div class="catalog-scroll" id="file-list"></div>
+            </div>
+
+            <div class="editor-pane">
+              <div class="editor-head">
+                <div>
+                  <div style="font-weight:700;font-size:14px;" id="editor-title">Selecione um arquivo</div>
+                  <div style="font-size:11.5px;font-family:var(--mono);color:var(--text-dim);" id="editor-path">—</div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <span id="editor-dirty-badge" class="badge badge-warn" style="display:none;">Não salvo</span>
+                  <button class="btn btn-sm" id="btn-revert" disabled>Reverter</button>
+                  <button class="btn btn-danger btn-sm" id="btn-delete" disabled>Excluir</button>
+                  <button class="btn btn-primary btn-sm" id="btn-save" disabled>Salvar (Ctrl+S)</button>
+                </div>
+              </div>
+              <div class="editor-warnings" id="editor-warnings"></div>
+              <textarea class="editor-textarea" id="editor-textarea" placeholder="Escolha um arquivo na lista ao lado para inspecionar ou evoluir..."></textarea>
+              <div class="editor-foot">
+                <span id="editor-metrics">0 linhas · 0 bytes · ~0 tokens</span>
+                <span id="editor-meta-info">—</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 3: OPERATIONS (CLI) -->
+        <section class="tab-pane" id="tab-ops">
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">
+              <h2>Executar Comandos do AI-Kit em Qualquer Projeto Local</h2>
+              <span class="badge badge-info">Execução segura via execFile</span>
+            </div>
+            <div class="form-grid">
+              <div style="grid-column: span 2;">
+                <label class="field-label">Diretório do Projeto (--target)</label>
+                <input type="text" id="ops-target" placeholder="Ex.: D:\Projetos\meu-projeto" />
+              </div>
+              <div>
+                <label class="field-label">Modo (opcional — sobrescreve project.yaml)</label>
+                <select id="ops-mode">
+                  <option value="">Ler de .ai/project.yaml</option>
+                  <option value="multi-ia">multi-ia</option>
+                  <option value="claude">claude (solo)</option>
+                  <option value="gemini">gemini (solo)</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label">Stacks (opcional — ex.: dotnet,react,postgresql)</label>
+                <input type="text" id="ops-stacks" placeholder="Ler de .ai/project.yaml" />
+              </div>
+            </div>
+
+            <div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:14px;font-size:13px;color:var(--text-muted);">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" id="ops-strict" checked style="width:auto;" /> --strict (doctor)
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" id="ops-adopt" style="width:auto;" /> --adopt (backup antes de adotar)
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" id="ops-prune" checked style="width:auto;" /> --prune (limpar órfãos managed-by)
+              </label>
+            </div>
+
+            <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+              <button class="btn btn-primary" onclick="runOps('doctor')">▶ Rodar Doctor</button>
+              <button class="btn" onclick="runOps('telemetry')">◎ Coletar Telemetria</button>
+              <button class="btn" onclick="runOps('sync', true)">⇄ Simular Sync (Dry-Run)</button>
+              <button class="btn" onclick="runOps('sync', false)">⚡ Aplicar Sync</button>
+              <div id="ops-recent" style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;"></div>
+            </div>
+          </div>
+
+          <div id="ops-telemetry-cards" style="display:none;margin-bottom:16px;"></div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2 id="ops-cmd-label">Saída do Terminal</h2>
+              <span class="badge badge-muted" id="ops-status-badge">Aguardando</span>
+            </div>
+            <div class="terminal" id="ops-terminal">Selecione um diretório de projeto acima e execute Doctor, Telemetria ou Sync.</div>
+          </div>
+        </section>
+
+        <!-- TAB 4: GREENFIELD PLAYBOOK -->
+        <section class="tab-pane" id="tab-greenfield">
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">
+              <h2>Configurador — Novo Projeto (Greenfield)</h2>
+              <span class="badge badge-ok">Macro-fundações + SDD Just-in-Time</span>
+            </div>
+            <div class="form-grid">
+              <div>
+                <label class="field-label">Nome do Projeto</label>
+                <input type="text" id="gf-name" value="Meu SaaS" oninput="renderGreenfield()" />
+              </div>
+              <div>
+                <label class="field-label">Pasta / Slug</label>
+                <input type="text" id="gf-slug" value="meu-saas" oninput="renderGreenfield()" />
+              </div>
+              <div>
+                <label class="field-label">Modo de IA</label>
+                <select id="gf-mode" onchange="renderGreenfield()">
+                  <option value="multi-ia">multi-ia (Gemini Planeja/QA + Claude Executa)</option>
+                  <option value="claude">claude (Solo)</option>
+                  <option value="gemini">gemini (Solo)</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label">Comando Build</label>
+                <input type="text" id="gf-build" value="dotnet build --nologo" oninput="renderGreenfield()" />
+              </div>
+              <div>
+                <label class="field-label">Comando Test</label>
+                <input type="text" id="gf-test" value="dotnet test --nologo --verbosity minimal" oninput="renderGreenfield()" />
+              </div>
+              <div>
+                <label class="field-label">Comando Lint (opcional)</label>
+                <input type="text" id="gf-lint" value="pnpm --filter web lint" oninput="renderGreenfield()" />
+              </div>
+            </div>
+            <label class="field-label">Stack Packs do Projeto</label>
+            <div class="stack-pills" id="gf-stacks"></div>
+          </div>
+          <div id="gf-output"></div>
+        </section>
+
+        <!-- TAB 5: BROWNFIELD PLAYBOOK -->
+        <section class="tab-pane" id="tab-brownfield">
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">
+              <h2>Configurador — Projeto Existente (Brownfield)</h2>
+              <span class="badge badge-warn">Migração segura em branch dedicada + --adopt</span>
+            </div>
+            <div class="form-grid">
+              <div>
+                <label class="field-label">Nome do Projeto Existente</label>
+                <input type="text" id="bf-name" value="Sistema Legado" oninput="renderBrownfield()" />
+              </div>
+              <div>
+                <label class="field-label">Branch de Migração</label>
+                <input type="text" id="bf-branch" value="chore/adotar-ai-kit" oninput="renderBrownfield()" />
+              </div>
+              <div>
+                <label class="field-label">Modo de IA</label>
+                <select id="bf-mode" onchange="renderBrownfield()">
+                  <option value="multi-ia">multi-ia (Gemini Planeja/QA + Claude Executa)</option>
+                  <option value="claude">claude (Solo)</option>
+                  <option value="gemini">gemini (Solo)</option>
+                </select>
+              </div>
+            </div>
+            <label class="field-label">Stack Packs Detectadas no Projeto</label>
+            <div class="stack-pills" id="bf-stacks"></div>
+          </div>
+          <div id="bf-output"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- MODAL NEW ITEM -->
+  <div class="modal-backdrop" id="modal-new">
+    <div class="modal">
+      <h3>Criar Novo Item no AI-Kit</h3>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div>
+          <label class="field-label">Tipo de Item</label>
+          <select id="new-kind" onchange="updateNewModalHints()">
+            <option value="skill-agent">Skill do Planejador/QA (core/.agent/skills/)</option>
+            <option value="skill-claude">Skill do Executor (core/.claude/skills/)</option>
+            <option value="skill-shared">Skill Compartilhada Gemini + Claude (core/shared/skills/)</option>
+            <option value="rule-geral">Rule Geral do Executor (core/.claude/rules/geral/)</option>
+            <option value="stack">Novo Stack Pack (stacks/&lt;slug&gt;/)</option>
+            <option value="agent">Subagente do Executor (core/.claude/agents/)</option>
+            <option value="hook">Hook Determinístico .cjs (core/.claude/hooks/)</option>
+          </select>
+        </div>
+        <div class="form-grid" style="margin-bottom:0;">
+          <div>
+            <label class="field-label">Slug (kebab-case)</label>
+            <input type="text" id="new-slug" placeholder="ex.: revisar-sql" />
+          </div>
+          <div>
+            <label class="field-label">Título</label>
+            <input type="text" id="new-title" placeholder="ex.: Revisar SQL" />
+          </div>
+        </div>
+        <div id="new-paths-wrap" style="display:none;">
+          <label class="field-label">Glob paths: (carregamento sob demanda)</label>
+          <input type="text" id="new-paths" value="**/*.{cs,ts,tsx}" />
+        </div>
+        <div id="new-skill-wrap">
+          <div class="form-grid" style="margin-bottom:8px;">
+            <div>
+              <label class="field-label">tier_ideal</label>
+              <select id="new-tier">
+                <option value="T1_ARQUITETO">T1_ARQUITETO</option>
+                <option value="T2_CONSTRUTOR" selected>T2_CONSTRUTOR</option>
+                <option value="T3_OPERADOR">T3_OPERADOR</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label">fallback_cota</label>
+              <select id="new-fallback">
+                <option value="T3_OPERADOR" selected>T3_OPERADOR</option>
+                <option value="T2_CONSTRUTOR">T2_CONSTRUTOR</option>
+                <option value="none">none (gate crítico)</option>
+              </select>
+            </div>
+          </div>
+          <label class="field-label">Descrição curta</label>
+          <input type="text" id="new-desc" placeholder="O que esta skill faz e quando usar" />
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeNewModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="submitNewItem()">Criar e Abrir no Editor</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const state = {
+      inventory: null,
+      selectedPath: null,
+      originalContent: "",
+      dirty: false,
+      gfStacks: new Set(["dotnet", "react", "postgresql", "docker"]),
+      bfStacks: new Set(["dotnet", "react", "mariadb"])
+    };
+
+    const PAGE_META = {
+      overview: ["Visão Geral & Guardrails Anti-Vibe-Coding", "Orçamento de tokens, integridade do Core agnóstico e blindagens determinísticas v2.1."],
+      catalog: ["Catálogo & Editor do AI-Kit", "Inspecione, edite e evolua skills, rules, subagentes, hooks e stack packs com validação ao vivo."],
+      ops: ["Operações em Projetos (Doctor · Telemetria · Sync)", "Execute validações e sincronizações direto em qualquer repositório local sem decorar flags."],
+      greenfield: ["Playbook: Projeto Novo (Greenfield)", "Comandos, templates prontos (.ai/project.yaml, AGENTS.md, CLAUDE.md) e prompts de início seguro."],
+      brownfield: ["Playbook: Projeto Existente (Brownfield)", "Migração em 6 passos com --adopt em branch dedicada, mapeamento de domínio e zero quebra de código."]
+    };
+
+    function toast(msg, kind = "ok") {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.className = `toast show ${kind}`;
+      clearTimeout(el._t);
+      el._t = setTimeout(() => el.classList.remove("show"), 3200);
+    }
+
+    function escapeHtml(s) {
+      return String(s || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    async function copyText(text, label = "Copiado!") {
+      try {
+        await navigator.clipboard.writeText(text);
+        toast(label, "ok");
+      } catch (_) {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        toast(label, "ok");
+      }
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+      document.querySelectorAll(".tab-pane").forEach((p) => p.classList.toggle("active", p.id === `tab-${tab}`));
+      const meta = PAGE_META[tab] || ["AI-Kit Studio", ""];
+      document.getElementById("page-title").textContent = meta[0];
+      document.getElementById("page-subtitle").textContent = meta[1];
+    }
+
+    async function loadInventory(keepSelected = true) {
+      const res = await fetch("/api/inventory");
+      const data = await res.json();
+      state.inventory = data;
+
+      document.getElementById("kit-version").textContent = `v${data.version}`;
+      document.getElementById("kit-root-path").textContent = data.kitRoot;
+      document.getElementById("nav-file-count").textContent = data.summary.fileCount;
+
+      const passGuards = data.guardrails.filter((g) => g.ok).length;
+      document.getElementById("nav-guard-score").textContent = `${passGuards}/${data.guardrails.length}`;
+
+      renderOverview();
+      renderFileList();
+      renderStackSelectors();
+      renderGreenfield();
+      renderBrownfield();
+
+      if (keepSelected && state.selectedPath) {
+        const exists = data.items.some((i) => i.path === state.selectedPath);
+        if (exists) await openFile(state.selectedPath, true);
+      } else if (!state.selectedPath && data.items.length > 0) {
+        await openFile(data.items[0].path, true);
+      }
+    }
+
+    function renderOverview() {
+      const { summary, guardrails, items } = state.inventory;
+      const alwaysOnStatus = summary.alwaysOnBytes <= 8192 ? "badge-ok" : "badge-warn";
+      document.getElementById("kpi-grid").innerHTML = `
+        <div class="card">
+          <div class="kpi-label">Orçamento Always-On</div>
+          <div class="kpi-value">~${summary.alwaysOnTokens} tok</div>
+          <div class="kpi-sub"><span class="badge ${alwaysOnStatus}">${summary.alwaysOnBytes} B / 8192 B teto</span></div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">Conteúdo Sob Demanda</div>
+          <div class="kpi-value">~${summary.onDemandTokens} tok</div>
+          <div class="kpi-sub">Carregado só via paths: ou invocação</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">Componentes do Core</div>
+          <div class="kpi-value">${summary.skillsCount}S · ${summary.rulesCount}R · ${summary.hooksCount}H</div>
+          <div class="kpi-sub">${summary.agentsCount} subagentes · ${summary.stacksCount} stack packs</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">Saúde do Catálogo</div>
+          <div class="kpi-value">${summary.warningCount === 0 ? "100%" : summary.warningCount + " warn"}</div>
+          <div class="kpi-sub">${summary.warningCount === 0 ? "Zero alertas de estrutura" : "Clique em Catálogo para revisar"}</div>
+        </div>
+      `;
+
+      const passGuards = guardrails.filter((g) => g.ok).length;
+      const gb = document.getElementById("guardrails-badge");
+      gb.textContent = `${passGuards}/${guardrails.length} ativos`;
+      gb.className = `badge ${passGuards === guardrails.length ? "badge-ok" : "badge-warn"}`;
+
+      document.getElementById("guard-list").innerHTML = guardrails.map((g) => `
+        <div class="guard-item">
+          <div class="guard-icon ${g.ok ? "ok" : "err"}">${g.ok ? "✓" : "!"}</div>
+          <div>
+            <div class="guard-title">${escapeHtml(g.title)}</div>
+            <div class="guard-detail">${escapeHtml(g.detail)}</div>
+          </div>
+        </div>
+      `).join("");
+
+      const catLabels = {
+        "skill-agent": "Skills Planejador (.agent)",
+        "skill-claude": "Skills Executor (.claude)",
+        "skill-shared": "Skills Shared",
+        "rule-geral": "Rules Geral (.claude)",
+        "rule-agent": "Rule Planejador (always-on)",
+        "stack": "Stack Packs",
+        "hook": "Hooks (.cjs)",
+        "agent": "Subagentes",
+        "config": "settings.json"
+      };
+      const entries = Object.entries(summary.byCategory)
+        .filter(([k]) => catLabels[k])
+        .sort((a, b) => b[1] - a[1]);
+      const maxTok = Math.max(1, ...entries.map(([, v]) => v));
+      document.getElementById("token-bars").innerHTML = entries.map(([k, v]) => `
+        <div class="bar-row">
+          <div class="bar-meta">
+            <span>${catLabels[k]}</span>
+            <span style="font-family:var(--mono);color:var(--text-muted);">~${v} tokens</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.round((v / maxTok) * 100)}%"></div></div>
+        </div>
+      `).join("");
+
+      const top6 = [...items]
+        .filter((i) => i.category !== "meta")
+        .sort((a, b) => b.estTokens - a.estTokens)
+        .slice(0, 6);
+      document.getElementById("heaviest-list").innerHTML = top6.map((i) => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);gap:10px;cursor:pointer;" onclick="jumpToFile('${escapeHtml(i.path)}')">
+          <div>
+            <div style="font-weight:600;font-size:13px;">${escapeHtml(i.title)}</div>
+            <div style="font-size:11px;font-family:var(--mono);color:var(--text-dim);">${escapeHtml(i.path)}</div>
+          </div>
+          <span class="badge badge-muted">~${i.estTokens} tok</span>
+        </div>
+      `).join("");
+    }
+
+    function jumpToFile(relPath) {
+      switchTab("catalog");
+      openFile(relPath);
+    }
+
+    function renderFileList() {
+      if (!state.inventory) return;
+      const q = document.getElementById("search-input").value.trim().toLowerCase();
+      const cat = document.getElementById("category-filter").value;
+      const onlyWarn = document.getElementById("only-warnings").checked;
+
+      const filtered = state.inventory.items.filter((it) => {
+        if (cat !== "all" && it.category !== cat) return false;
+        if (onlyWarn && it.warnings.length === 0) return false;
+        if (q && !it.path.toLowerCase().includes(q) && !it.title.toLowerCase().includes(q) && !it.description.toLowerCase().includes(q)) return false;
+        return true;
+      });
+
+      const listEl = document.getElementById("file-list");
+      if (filtered.length === 0) {
+        listEl.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:13px;">Nenhum item encontrado.</div>`;
+        return;
+      }
+
+      listEl.innerHTML = filtered.map((it) => {
+        const badges = [];
+        if (it.alwaysOn) badges.push(`<span class="badge badge-warn">always-on</span>`);
+        else if (it.hasPaths) badges.push(`<span class="badge badge-info">paths:</span>`);
+        if (it.tier) badges.push(`<span class="badge badge-accent">${escapeHtml(it.tier)}</span>`);
+        if (it.warnings.length) badges.push(`<span class="badge badge-err">${it.warnings.length} alerta(s)</span>`);
+        return `
+          <div class="file-row ${state.selectedPath === it.path ? "active" : ""}" onclick="openFile('${escapeHtml(it.path)}')">
+            <div class="file-row-top">
+              <span>${escapeHtml(it.title)}</span>
+              <span style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">~${it.estTokens}t</span>
+            </div>
+            <div class="file-row-path">${escapeHtml(it.path)}</div>
+            <div class="file-row-badges">${badges.join("")}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function openFile(relPath, silent = false) {
+      if (state.dirty && !silent) {
+        if (!confirm("Há alterações não salvas no editor. Descartar e abrir outro arquivo?")) return;
+      }
+      const res = await fetch(`/api/file?path=${encodeURIComponent(relPath)}`);
+      if (!res.ok) {
+        toast("Não foi possível abrir o arquivo.", "err");
+        return;
+      }
+      const data = await res.json();
+      state.selectedPath = data.item.path;
+      state.originalContent = data.content;
+      state.dirty = false;
+
+      document.getElementById("editor-title").textContent = `${data.item.title} (${data.item.groupLabel})`;
+      document.getElementById("editor-path").textContent = data.item.path;
+      const ta = document.getElementById("editor-textarea");
+      ta.value = data.content;
+      document.getElementById("editor-dirty-badge").style.display = "none";
+      document.getElementById("btn-save").disabled = true;
+      document.getElementById("btn-revert").disabled = true;
+      document.getElementById("btn-delete").disabled = data.item.protected;
+      document.getElementById("btn-delete").title = data.item.protected ? "Arquivo protegido do Core" : "Excluir item";
+
+      renderEditorWarnings(data.item.warnings);
+      updateEditorMetrics(data.item);
+      renderFileList();
+    }
+
+    function renderEditorWarnings(warnings) {
+      const box = document.getElementById("editor-warnings");
+      if (!warnings || warnings.length === 0) {
+        box.style.display = "none";
+        box.innerHTML = "";
+        return;
+      }
+      box.style.display = "block";
+      box.innerHTML = `<strong>Alertas de validação:</strong><ul style="margin:4px 0 0 18px;padding:0;">${warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul>`;
+    }
+
+    function updateEditorMetrics(item) {
+      const text = document.getElementById("editor-textarea").value;
+      const bytes = new Blob([text]).size;
+      const lines = text ? text.split(/\r?\n/).length : 0;
+      const tokens = Math.ceil(bytes / 4);
+      document.getElementById("editor-metrics").textContent = `${lines} linhas · ${bytes} bytes · ~${tokens} tokens`;
+      if (item) {
+        const flags = [
+          item.managedBy ? "managed-by: ok" : "sem managed-by",
+          item.alwaysOn ? "always-on" : (item.hasPaths ? "sob demanda (paths:)" : "skill/config")
+        ];
+        document.getElementById("editor-meta-info").textContent = flags.join(" · ");
+      }
+    }
+
+    async function saveCurrentFile() {
+      if (!state.selectedPath) return;
+      const content = document.getElementById("editor-textarea").value;
+      const res = await fetch("/api/file", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: state.selectedPath, content })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || "Erro ao salvar.", "err");
+        return;
+      }
+      state.originalContent = content;
+      state.dirty = false;
+      document.getElementById("editor-dirty-badge").style.display = "none";
+      document.getElementById("btn-save").disabled = true;
+      document.getElementById("btn-revert").disabled = true;
+      renderEditorWarnings(data.item.warnings);
+      toast(`Salvo: ${state.selectedPath}`, "ok");
+      await loadInventory(true);
+    }
+
+    async function deleteCurrentFile() {
+      if (!state.selectedPath) return;
+      if (!confirm(`Excluir permanentemente "${state.selectedPath}" do AI-Kit?`)) return;
+      const res = await fetch(`/api/item?path=${encodeURIComponent(state.selectedPath)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || "Não foi possível excluir.", "err");
+        return;
+      }
+      toast(`Excluído: ${state.selectedPath}`, "ok");
+      state.selectedPath = null;
+      state.dirty = false;
+      await loadInventory(false);
+    }
+
+    // Modal Novo Item
+    function openNewModal() {
+      document.getElementById("modal-new").classList.add("open");
+      document.getElementById("new-slug").value = "";
+      document.getElementById("new-title").value = "";
+      document.getElementById("new-desc").value = "";
+      updateNewModalHints();
+      setTimeout(() => document.getElementById("new-slug").focus(), 40);
+    }
+    function closeNewModal() {
+      document.getElementById("modal-new").classList.remove("open");
+    }
+    function updateNewModalHints() {
+      const kind = document.getElementById("new-kind").value;
+      document.getElementById("new-skill-wrap").style.display = kind.startsWith("skill-") ? "block" : "none";
+      document.getElementById("new-paths-wrap").style.display = (kind === "rule-geral" || kind === "stack") ? "block" : "none";
+    }
+    async function submitNewItem() {
+      const payload = {
+        kind: document.getElementById("new-kind").value,
+        slug: document.getElementById("new-slug").value.trim(),
+        title: document.getElementById("new-title").value.trim(),
+        description: document.getElementById("new-desc").value.trim(),
+        tier: document.getElementById("new-tier").value,
+        fallback: document.getElementById("new-fallback").value,
+        paths: document.getElementById("new-paths").value.trim()
+      };
+      if (!payload.slug) {
+        toast("Informe um slug válido (ex.: revisar-sql).", "err");
+        return;
+      }
+      const res = await fetch("/api/item", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || "Erro ao criar item.", "err");
+        return;
+      }
+      closeNewModal();
+      toast(`Criado: ${data.item.path}`, "ok");
+      state.selectedPath = data.item.path;
+      switchTab("catalog");
+      await loadInventory(true);
+    }
+
+    // Operations (CLI)
+    function loadRecentTargets() {
+      try {
+        const list = JSON.parse(localStorage.getItem("aikit_recent_targets") || "[]");
+        const wrap = document.getElementById("ops-recent");
+        wrap.innerHTML = list.slice(0, 4).map((p) => `
+          <button class="btn btn-sm" onclick="document.getElementById('ops-target').value = ${JSON.stringify(p)}">${escapeHtml(p.split(/[\\/]/).pop() || p)}</button>
+        `).join("");
+      } catch (_) {}
+    }
+    function saveRecentTarget(p) {
+      if (!p) return;
+      try {
+        const list = JSON.parse(localStorage.getItem("aikit_recent_targets") || "[]").filter((x) => x !== p);
+        list.unshift(p);
+        localStorage.setItem("aikit_recent_targets", JSON.stringify(list.slice(0, 6)));
+        loadRecentTargets();
+      } catch (_) {}
+    }
+
+    function colorizeTerminal(text) {
+      return escapeHtml(text)
+        .replace(/(\[OK\]|\[CRIADO\s*\]|\[ATUALIZADO\s*\])/g, '<span class="t-ok">$1</span>')
+        .replace(/(\[WARN\]|\[AVISO\]|\[PULADO\]|\[BACKUP\]|\[DRY-RUN\])/g, '<span class="t-warn">$1</span>')
+        .replace(/(\[ERRO\]|\[ALERTA\]|\[REMOVIDO\])/g, '<span class="t-err">$1</span>');
+    }
+
+    async function runOps(command, dryRun = false) {
+      const target = document.getElementById("ops-target").value.trim();
+      if (!target) {
+        toast("Informe o diretório do projeto (--target).", "err");
+        return;
+      }
+      saveRecentTarget(target);
+
+      const badge = document.getElementById("ops-status-badge");
+      badge.className = "badge badge-info";
+      badge.textContent = "Executando...";
+      document.getElementById("ops-terminal").textContent = "Aguarde...";
+      document.getElementById("ops-telemetry-cards").style.display = "none";
+
+      const body = {
+        command,
+        target,
+        strict: document.getElementById("ops-strict").checked,
+        adopt: document.getElementById("ops-adopt").checked,
+        prune: document.getElementById("ops-prune").checked,
+        dryRun,
+        mode: document.getElementById("ops-mode").value,
+        stacks: document.getElementById("ops-stacks").value.trim(),
+        json: command === "telemetry"
+      };
+
+      const res = await fetch("/api/cli", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+
+      document.getElementById("ops-cmd-label").textContent = `${data.commandLine || command} (${data.durationMs}ms)`;
+      badge.className = `badge ${data.ok ? "badge-ok" : "badge-err"}`;
+      badge.textContent = data.ok ? `exit 0` : `exit ${data.exitCode}`;
+
+      const combined = [data.stdout, data.stderr].filter(Boolean).join("\n");
+      document.getElementById("ops-terminal").innerHTML = colorizeTerminal(combined || "(sem saída)");
+
+      if (data.telemetryJson && data.telemetryJson.isGit) {
+        const t = data.telemetryJson;
+        const box = document.getElementById("ops-telemetry-cards");
+        box.style.display = "block";
+        box.innerHTML = `
+          <div class="kpi-grid" style="margin-bottom:0;">
+            <div class="card">
+              <div class="kpi-label">Diff_Hash (Entrega)</div>
+              <div class="kpi-value" style="font-size:19px;">${escapeHtml(t.diffHash)}</div>
+              <div class="kpi-sub">${escapeHtml(t.branch)} @ ${escapeHtml(t.head)}</div>
+            </div>
+            <div class="card">
+              <div class="kpi-label">Integridade de Testes</div>
+              <div class="kpi-value" style="font-size:19px;">${t.testIntegrity.ok ? "OK" : "ALERTA"}</div>
+              <div class="kpi-sub">Assertions +${t.testIntegrity.addedAssertions} / -${t.testIntegrity.removedAssertions}</div>
+            </div>
+            <div class="card">
+              <div class="kpi-label">Caminhos Sensíveis</div>
+              <div class="kpi-value" style="font-size:19px;">${t.sensitiveTouched.length}</div>
+              <div class="kpi-sub">${escapeHtml(t.riskEscalation)}</div>
+            </div>
+            <div class="card">
+              <div class="kpi-label">Suítes Sugeridas</div>
+              <div class="kpi-value" style="font-size:16px;">${escapeHtml((t.suitesHint || []).join(", ") || "nenhuma")}</div>
+              <div class="kpi-sub">${t.dirtyCount} arquivo(s) tocado(s)</div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    // Playbooks Helpers
+    function renderStackSelectors() {
+      const stacks = (state.inventory && state.inventory.stacks) || [];
+      const makePills = (targetId, setObj, onChangeFn) => {
+        document.getElementById(targetId).innerHTML = stacks.map((s) => {
+          const checked = setObj.has(s);
+          return `
+            <label class="stack-pill ${checked ? "checked" : ""}">
+              <input type="checkbox" ${checked ? "checked" : ""} onchange="togglePlaybookStack('${targetId}', '${s}', this.checked)" />
+              ${escapeHtml(s)}
+            </label>
+          `;
+        }).join("");
+      };
+      makePills("gf-stacks", state.gfStacks, renderGreenfield);
+      makePills("bf-stacks", state.bfStacks, renderBrownfield);
+    }
+
+    function togglePlaybookStack(targetId, stack, checked) {
+      const setObj = targetId === "gf-stacks" ? state.gfStacks : state.bfStacks;
+      if (checked) setObj.add(stack);
+      else setObj.delete(stack);
+      renderStackSelectors();
+      if (targetId === "gf-stacks") renderGreenfield();
+      else renderBrownfield();
+    }
+
+    function codeCard(stepNum, title, badgeText, content) {
+      const id = "cc_" + Math.random().toString(36).slice(2, 9);
+      window._copyMap = window._copyMap || {};
+      window._copyMap[id] = content;
+      return `
+        <div class="code-card">
+          <div class="code-card-head">
+            <div class="code-card-title">
+              <span class="step-badge">${stepNum}</span>
+              <span>${escapeHtml(title)}</span>
+              ${badgeText ? `<span class="badge badge-muted">${escapeHtml(badgeText)}</span>` : ""}
+            </div>
+            <button class="btn btn-sm" onclick="copyText(window._copyMap['${id}'], 'Copiado: ${escapeHtml(title)}')">Copiar</button>
+          </div>
+          <pre class="code-pre">${escapeHtml(content)}</pre>
+        </div>
+      `;
+    }
+
+    function buildProjectYaml(name, mode, stacksArr, buildCmd, testCmd, lintCmd) {
+      const stacksYaml = stacksArr.length ? stacksArr.map((s) => `  - ${s}`).join("\n") : "  # core-only";
+      return `project:
+  name: "${name}"
+
+ai:
+  mode: ${mode}
+
+stacks:
+${stacksYaml}
+
+paths:
+  application_map: APPLICATION_MAP.md
+  plan: docs/plano.md
+  queue_dir: docs/fila
+  decisions: docs/decisoes.md
+  technical_memory: docs/memoria-tecnica.md
+  open_questions: docs/pendencias.md
+  business_rules: docs/regras-de-negocio.md
+  domain_rules_dir: .claude/rules/dominio
+  qa_sandbox: .tmp/homologacao
+
+commands:
+  build: "${buildCmd}"
+  test: "${testCmd}"${lintCmd ? `\n  lint: "${lintCmd}"` : ""}
+  sanity_build: "${buildCmd}"
+
+limits:
+  max_parallel_subagents: 2
+`;
+    }
+
+    function buildModelosMd() {
+      return `# Matriz de Modelos (Preflight AI-Kit)
+
+| Tier | Papel | Modelos Recomendados |
+|---|---|---|
+| \`T1_ARQUITETO\` | Explorar, propor, revisar proposta (\`fallback_cota: none\`), auditar segurança | Claude Opus / Gemini Pro (raciocínio alto) |
+| \`T2_CONSTRUTOR\` | Implementar bloco, revisar código/UI, homologar, retomar | Claude Sonnet / Gemini Pro |
+| \`T3_OPERADOR\` | \`rodar-testes\`, \`concluir-change\`, \`openspec-archive-change\` | Claude Haiku / Gemini Flash |
+`;
+    }
+
+    function buildAgentsMd(name, mode) {
+      return `# ${name} — Contrato Multi-IA (OpenSpec SDD)
+
+- **Fonte única de configuração:** \`.ai/project.yaml\` (comandos, stacks, caminhos e limites).
+- **Modo de IA:** \`${mode}\`.
+- **Mapa da aplicação:** \`APPLICATION_MAP.md\` (consulte antes de buscar arquivos no disco).
+- **Memória técnica e ADRs:** \`docs/memoria-tecnica.md\` e \`docs/decisoes.md\`.
+- **Fluxo obrigatório:** \`openspec-explore\` (se ambíguo) → \`openspec-propose\` (já roda \`revisar-proposta\`) → aprovação humana → \`/aplicar-change\` → \`homologar-change\` → revisão humana de diff → \`concluir-change\`.
+- **Anti-vibe-coding:** proibido editar código sem change aprovada, proibido enfraquecer testes ou arquivar sem \`ai-kit telemetry\` + revisão humana.
+`;
+    }
+
+    function buildClaudeMd(name) {
+      return `# ${name} — Executor (Claude Code)
+
+1. Leia \`.ai/project.yaml\` para comandos, suítes e caminhos.
+2. Siga \`AGENTS.md\` e as regras em \`.claude/rules/\` (\`geral/\`, \`stacks/\`, \`dominio/\`).
+3. Implemente changes aprovadas exclusivamente via \`/aplicar-change <change>\` (1 bloco por vez, subagente limpo).
+4. Nunca adicione \`2>&1\`, \`| tail\` ou \`| head\` em comandos de build/teste (quebra \`filtrar-saida-testes.cjs\`).
+5. Em caso de dúvida de negócio, design contraditório ou conflito de teste existente, pare como \`BLOQUEADO\`.
+`;
+    }
+
+    function renderGreenfield() {
+      const name = document.getElementById("gf-name").value.trim() || "Meu Projeto";
+      const slug = document.getElementById("gf-slug").value.trim() || "meu-projeto";
+      const mode = document.getElementById("gf-mode").value;
+      const buildCmd = document.getElementById("gf-build").value.trim() || "npm run build";
+      const testCmd = document.getElementById("gf-test").value.trim() || "npm test";
+      const lintCmd = document.getElementById("gf-lint").value.trim();
+      const stacks = Array.from(state.gfStacks).sort();
+      const stacksArg = stacks.length ? stacks.join(",") : "core-only";
+
+      const psCommands = `# 1. Criar repositório e estrutura base
+mkdir ${slug}
+cd ${slug}
+git init
+mkdir .ai, docs, docs\\fila, .claude\\rules\\dominio -Force
+
+# 2. Inicializar OpenSpec (se instalado globalmente)
+openspec init
+
+# 3. Sincronizar Core v2.1 + Stack Packs selecionados
+ai-kit sync --mode ${mode} --stacks ${stacksArg} --target .
+
+# 4. Depois de criar .ai/project.yaml, .ai/modelos.md, AGENTS.md, CLAUDE.md e docs/:
+ai-kit doctor --strict --target .`;
+
+      const gitignore = `.env
+.env.*
+!.env.example
+.tmp/
+.ai-kit-backup/
+node_modules/
+bin/
+obj/
+dist/
+coverage/
+playwright-report/
+test-results/
+`;
+
+      const bootstrapPrompt = `Atue como Planejador/Arquiteto (T1_ARQUITETO) no projeto "${name}".
+Leia .ai/project.yaml e AGENTS.md.
+Vamos iniciar o projeto com **macro-fundações enxutas** (sem especificar tudo em detalhe antecipado — refinaremos change a change no modelo Just-in-Time):
+
+1. Crie os arquivos iniciais apontados em .ai/project.yaml:
+   - APPLICATION_MAP.md (mapa inicial de módulos e pastas previstos)
+   - docs/plano.md (macro-roadmap em fatias pequenas e verificáveis)
+   - docs/decisoes.md (ADRs fundacionais de stack, banco, auth/tenant e testes)
+   - docs/memoria-tecnica.md (template inicial de armadilhas técnicas)
+   - docs/pendencias.md (dúvidas em aberto de negócio — não invente regras)
+   - docs/regras-de-negocio.md (somente regras confirmadas, com IDs RN-001...)
+2. Crie em .claude/rules/dominio/ (com frontmatter paths: obrigatório!) apenas invariantes estruturais de domínio já decididos.
+3. Configure openspec/config.yaml com os princípios fixos do projeto.
+4. Ao final, rode \`ai-kit doctor --strict --target .\` e proponha qual deve ser a Fatia 01 (indicando se começa por openspec-explore ou openspec-propose).
+
+Contexto inicial do produto:
+[DESCREVA AQUI EM 5 A 10 LINHAS O OBJETIVO, USUÁRIOS E PRIMEIRO FLUXO DO PRODUTO]`;
+
+      const firstChangePrompt = `Vamos iniciar a Fatia 01 do projeto "${name}".
+Siga rigorosamente o fluxo OpenSpec SDD do ai-kit:
+- Se houver ambiguidade de regra de negócio ou decisão técnica aberta, rode primeiro \`openspec-explore\`.
+- Se o escopo já estiver fechado, rode \`openspec-propose\` (já incluindo frontmatter de \`risk\`, critérios de aceite travados em \`design.md\`, \`tasks.md\` em Blocos Atômicos e a revisão automática read-only \`revisar-proposta\`).
+- Pare após entregar \`revisao-proposta.md\` aguardando minha aprovação explícita antes de ir para \`/aplicar-change\`.`;
+
+      const dailyFlow = `# Fluxo Diário Seguro (Zero Vibe-Coding)
+1. Planejador (Gemini / T1): openspec-explore (se houver dúvida) → openspec-propose (gera revisao-proposta.md)
+2. Você: aprova o design.md e o nível de risk (low/medium/high)
+3. Executor (Claude / T2): /aplicar-change <change> (1 bloco por vez + rodar-testes + ai-kit telemetry)
+4. QA (Gemini / T2): homologar-change <change> (sandbox efêmera + ondas IA-CLI/IA-UI — teto da autonomia)
+5. Você no VS Code: revisa git diff + ai-kit telemetry --target .
+6. Fechamento humano (T3): concluir-change <change> (sync docs + openspec archive + commit/push + próxima fatia)`;
+
+      document.getElementById("gf-output").innerHTML = [
+        codeCard(1, "Comandos PowerShell de Inicialização", "CLI", psCommands),
+        codeCard(2, "Arquivo: .ai/project.yaml", "Contrato central", buildProjectYaml(name, mode, stacks, buildCmd, testCmd, lintCmd)),
+        codeCard(3, "Arquivos Base: AGENTS.md & CLAUDE.md", "Raiz do repo", `===== AGENTS.md =====\n${buildAgentsMd(name, mode)}\n===== CLAUDE.md =====\n${buildClaudeMd(name)}\n===== .ai/modelos.md =====\n${buildModelosMd()}\n===== .gitignore (trecho obrigatório) =====\n${gitignore}`),
+        codeCard(4, "Prompt 1 — Bootstrap de Macro-Fundações", "Colar no Planejador (T1)", bootstrapPrompt),
+        codeCard(5, "Prompt 2 — Disparar a 1ª Change", "Colar no Planejador (T1)", firstChangePrompt),
+        codeCard(6, "Resumo do Ciclo Diário (Referência Rápida)", "SDD v2.1", dailyFlow)
+      ].join("");
+    }
+
+    function renderBrownfield() {
+      const name = document.getElementById("bf-name").value.trim() || "Projeto Existente";
+      const branch = document.getElementById("bf-branch").value.trim() || "chore/adotar-ai-kit";
+      const mode = document.getElementById("bf-mode").value;
+      const stacks = Array.from(state.bfStacks).sort();
+      const stacksArg = stacks.length ? stacks.join(",") : "core-only";
+
+      const step1Cmd = `# 1. Crie uma branch dedicada para adoção (nunca migre direto na main)
+git checkout -b ${branch}
+
+# 2. Simule o que o ai-kit vai criar/fazer backup (ZERO escrita no disco)
+ai-kit sync --adopt --dry-run --mode ${mode} --stacks ${stacksArg} --target .
+
+# 3. Se o dry-run estiver limpo, aplique o sync (gera backup em .ai-kit-backup/)
+ai-kit sync --adopt --mode ${mode} --stacks ${stacksArg} --target .
+
+# 4. Rode o diagnóstico inicial para listar o que falta configurar
+ai-kit doctor --target .`;
+
+      const migrationPrompt = `Atue como Arquiteto de Migração (T1_ARQUITETO) na branch "${branch}" do projeto existente "${name}".
+Objetivo: adotar o ai-kit v2.1 **sem alterar nenhuma linha de código de aplicação** e preservando as convenções reais deste repositório.
+
+Execute em 6 passos ordenados:
+1. **Auditoria de legado de IA:** verifique se existem pastas/arquivos antigos (.claude/, .agent/, .cursorrules, .github/copilot-instructions.md, skills antigas, workflows opsx-*). Liste o que pode ser absorvido e o que é redundante.
+2. **Mapeamento estrutural econômico (sem varrer node_modules/bin/obj):** descubra os projetos, comandos reais de build/test/lint, bancos, integrações e módulos principais. Crie/atualize \`APPLICATION_MAP.md\`.
+3. **Contrato \`.ai/project.yaml\` + \`.ai/modelos.md\`:** crie ambos refletindo os comandos REAIS do repositório (mode: ${mode}, stacks: [${stacks.join(", ")}]).
+4. **Ponte de regras de negócio e legado:** extraia regras críticas do sistema (auth, multi-tenant, padrões legados que NÃO podem ser quebrados) para \`.claude/rules/dominio/*.md\` (SEMPRE com frontmatter \`paths:\` obrigatório) e registre armadilhas conhecidas em \`docs/memoria-tecnica.md\`.
+5. **Documentos de raiz enxutos:** crie/atualize \`AGENTS.md\` (<= 60 linhas), \`CLAUDE.md\` (<= 30 linhas), \`docs/plano.md\`, \`docs/decisoes.md\`, \`docs/pendencias.md\`, \`docs/regras-de-negocio.md\` e garanta \`.env\` e \`.tmp/\` no \`.gitignore\`.
+6. **Validação final:** remova redundâncias apontadas pelo doctor, rode \`ai-kit sync --prune --target .\` e \`ai-kit doctor --strict --target .\`. Entregue um resumo com tudo que foi migrado, o que ficou em \`.ai-kit-backup/\` e eventuais conflitos entre o stack pack padrão e o código legado.`;
+
+      const firstLegacyChange = `A migração do ai-kit foi validada com \`doctor --strict\` no projeto "${name}".
+Agora vamos fazer a primeira change real em código legado com segurança máxima:
+1. Rode \`openspec-explore\` para a demanda abaixo, mapeando exatamente os arquivos legados tocados, riscos de regressão e testes existentes.
+2. Classifique o \`risk\` no \`proposal.md\` (use \`medium\` ou \`high\` se tocar auth, banco, multi-tenant ou área sem testes automatizados).
+3. Antes de alterar qualquer código legado sem cobertura, inclua no Bloco 1 do \`tasks.md\` testes de caracterização/regressão cobrindo o comportamento atual.
+
+Demanda:
+[DESCREVA AQUI A PRIMEIRA DEMANDA / CORREÇÃO / FEATURE]`;
+
+      const verifyCmd = `# Após concluir a migração e revisar o diff da branch ${branch}:
+ai-kit sync --prune --target .
+ai-kit doctor --strict --target .
+ai-kit telemetry --target .
+
+# Estando tudo verde, revise os backups em .ai-kit-backup/ (já ignorado no .gitignore) e faça o commit da adoção.`;
+
+      document.getElementById("bf-output").innerHTML = [
+        codeCard(1, "Comandos PowerShell — Branch + Dry-Run + Adopt", "Sem tocar em código", step1Cmd),
+        codeCard(2, "Prompt de Migração Brownfield em 6 Passos", "Colar no Planejador/Claude (T1)", migrationPrompt),
+        codeCard(3, "Validação Pós-Migração (--strict + --prune + telemetry)", "Gate final", verifyCmd),
+        codeCard(4, "Prompt para a 1ª Change Segura em Código Legado", "Após merge da adoção", firstLegacyChange)
+      ].join("");
+    }
+
+    // Event bindings
+    document.querySelectorAll(".nav-btn").forEach((btn) => {
+      btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+    });
+    document.getElementById("btn-refresh").addEventListener("click", () => loadInventory(true).then(() => toast("Inventário recarregado do disco.")));
+    document.getElementById("btn-new-item-side").addEventListener("click", openNewModal);
+    document.getElementById("btn-new-item-top").addEventListener("click", openNewModal);
+    document.getElementById("btn-toggle-theme").addEventListener("click", () => {
+      const html = document.documentElement;
+      const next = html.getAttribute("data-theme") === "dark" ? "light" : "dark";
+      html.setAttribute("data-theme", next);
+      localStorage.setItem("aikit_theme", next);
+    });
+    document.getElementById("search-input").addEventListener("input", renderFileList);
+    document.getElementById("category-filter").addEventListener("change", renderFileList);
+    document.getElementById("only-warnings").addEventListener("change", renderFileList);
+
+    const ta = document.getElementById("editor-textarea");
+    ta.addEventListener("input", () => {
+      state.dirty = ta.value !== state.originalContent;
+      document.getElementById("editor-dirty-badge").style.display = state.dirty ? "inline-flex" : "none";
+      document.getElementById("btn-save").disabled = !state.dirty;
+      document.getElementById("btn-revert").disabled = !state.dirty;
+      updateEditorMetrics(null);
+    });
+    document.getElementById("btn-save").addEventListener("click", saveCurrentFile);
+    document.getElementById("btn-revert").addEventListener("click", () => {
+      ta.value = state.originalContent;
+      state.dirty = false;
+      document.getElementById("editor-dirty-badge").style.display = "none";
+      document.getElementById("btn-save").disabled = true;
+      document.getElementById("btn-revert").disabled = true;
+      updateEditorMetrics(null);
+    });
+    document.getElementById("btn-delete").addEventListener("click", deleteCurrentFile);
+
+    window.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        if (document.getElementById("tab-catalog").classList.contains("active") && state.dirty) {
+          e.preventDefault();
+          saveCurrentFile();
+        }
+      }
+      if (e.key === "Escape") closeNewModal();
+    });
+
+    // Init
+    (function init() {
+      const savedTheme = localStorage.getItem("aikit_theme");
+      if (savedTheme) document.documentElement.setAttribute("data-theme", savedTheme);
+      loadRecentTargets();
+      loadInventory(false);
+    })();
+  </script>
+</body>
+</html>

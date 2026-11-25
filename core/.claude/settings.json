@@ -1,0 +1,119 @@
+{
+  "_managedBy": "ai-kit",
+  "model": "sonnet",
+  "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "55",
+    "ENABLE_STOP_REVIEW": "0"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build *)",
+      "Bash(dotnet test *)",
+      "Bash(dotnet format *)",
+      "Bash(msbuild *)",
+      "Bash(vstest.console.exe *)",
+      "Bash(npm run *)",
+      "Bash(npm test *)",
+      "Bash(pnpm build *)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm lint *)",
+      "Bash(pnpm typecheck *)",
+      "Bash(pnpm -C * build *)",
+      "Bash(pnpm -C * test *)",
+      "Bash(pnpm -C * lint *)",
+      "Bash(pnpm -C * typecheck *)",
+      "Bash(pnpm --filter * build *)",
+      "Bash(pnpm --filter * test *)",
+      "Bash(pnpm --filter * lint *)",
+      "Bash(pnpm --filter * typecheck *)",
+      "Bash(npx vitest *)",
+      "Bash(npx tsc *)",
+      "Bash(npx playwright test *)",
+      "Bash(ai-kit telemetry *)",
+      "Bash(ai-kit doctor *)",
+      "Bash(openspec list *)",
+      "Bash(openspec show *)",
+      "Bash(openspec validate *)",
+      "Bash(openspec status *)",
+      "Bash(openspec instructions *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(docker compose ps *)",
+      "Bash(docker compose logs *)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/*.key)",
+      "Read(**/*.pfx)",
+      "Read(**/*.p12)",
+      "Read(**/*.pem)",
+      "Read(**/node_modules/**)",
+      "Read(**/bin/**)",
+      "Read(**/obj/**)",
+      "Read(**/dist/**)",
+      "Read(**/coverage/**)",
+      "Read(**/TestResults/**)",
+      "Read(**/package-lock.json)",
+      "Read(**/pnpm-lock.yaml)",
+      "Read(openspec/changes/archive/**)",
+      "Read(~/.claude/**)",
+      "Read(~/.gemini/**)",
+      "Bash(openspec archive *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Edit(**/openspec/specs/**)",
+      "Edit(**/openspec/changes/*/proposal.md)",
+      "Edit(**/openspec/changes/*/design.md)",
+      "Edit(**/openspec/changes/*/specs/**)",
+      "Write(**/openspec/specs/**)",
+      "Write(**/openspec/changes/*/proposal.md)",
+      "Write(**/openspec/changes/*/design.md)",
+      "Write(**/openspec/changes/*/specs/**)",
+      "MultiEdit(**/openspec/specs/**)",
+      "MultiEdit(**/openspec/changes/*/proposal.md)",
+      "MultiEdit(**/openspec/changes/*/design.md)",
+      "MultiEdit(**/openspec/changes/*/specs/**)",
+      "Read(.tmp/**)",
+      "Read(.ai-kit-backup/**)",
+      "Read(**/playwright-report/**)",
+      "Read(**/test-results/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/proteger-arquivos.cjs\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/filtrar-saida-testes.cjs\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/verificar-regras.cjs\""
+          }
+        ]
+      }
+    ]
+  }
+}
