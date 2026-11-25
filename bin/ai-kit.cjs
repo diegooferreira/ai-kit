@@ -35,7 +35,8 @@ const MULTI_IA_ONLY_DENY = new Set([
 const REQUIRED_HOOKS = [
   "proteger-arquivos.cjs",
   "verificar-regras.cjs",
-  "filtrar-saida-testes.cjs"
+  "filtrar-saida-testes.cjs",
+  "worker-bridge.cjs"
 ];
 
 const SENSITIVE_PATH_REGEXES = [
@@ -49,10 +50,11 @@ const SENSITIVE_PATH_REGEXES = [
 
 function printHelp() {
   console.log(`
-ai-kit v2.1 — Biblioteca Central Multi-IA (OpenSpec SDD)
+ai-kit v2.2.1 — Biblioteca Central Multi-IA + Studio + Worker Telegram
 
 Comandos:
   ai-kit studio [opcoes]     Abre o AI-Kit Studio (painel web local de gestao e playbooks)
+  ai-kit worker <subcmd>     Orquestrador Multi-IA headless via Telegram (setup-telegram|start|status|approve|doctor)
   ai-kit sync [opcoes]       Sincroniza Core (.agent/.claude/shared) + Stack Packs
   ai-kit doctor [opcoes]     Valida ponteiros, paths:, hooks .cjs, blindagens v2.1 e redundancias
   ai-kit telemetry [opcoes]  Coleta telemetria deterministica do git (diff_hash, risco, testes)
@@ -72,6 +74,8 @@ Opcoes comuns:
 
 Exemplos:
   ai-kit studio
+  ai-kit worker setup-telegram
+  ai-kit worker start
   ai-kit sync --target . --prune
   ai-kit sync --adopt --mode multi-ia --stacks dotnet,react,postgresql --target .
   ai-kit doctor --strict --target .
@@ -434,7 +438,7 @@ function runDoctor(opts) {
   const warn = (msg) => { warns++; console.log(`  [WARN]  ${msg}`); };
   const err = (msg) => { errors++; console.log(`  [ERRO]  ${msg}`); };
 
-  console.log(`\nai-kit doctor v2.1 -> ${targetRoot}\n`);
+  console.log(`\nai-kit doctor v2.2 -> ${targetRoot}\n`);
 
   // 1. Contrato .ai/project.yaml
   if (!cfg.exists) {
@@ -532,21 +536,11 @@ function runDoctor(opts) {
           err(`Hook legado .js encontrado (${path.relative(targetRoot, f.full)}). Converta ou remova (use .cjs).`);
         }
       }
-
       const filterHook = path.join(hooksDir, "filtrar-saida-testes.cjs");
       if (fs.existsSync(filterHook)) {
         const rawHook = fs.readFileSync(filterHook, "utf8");
         const filterCode = stripJsComments(rawHook);
         if (/\bpermissionDecision\s*:\s*["']allow["']/.test(filterCode)) {
-          err("filtrar-saida-testes.cjs usa permissionDecision: 'allow' (risco de bypass). Rode ai-kit sync.");
-        } else {
-          ok("filtrar-saida-testes.cjs endurecido (sem bypass de auto-allow)");
-        }
-      }
-
-      if (fs.existsSync(filterHook)) {
-        const rawHook = fs.readFileSync(filterHook, "utf8");
-        if (rawHook.includes('permissionDecision: "allow"')) {
           err("filtrar-saida-testes.cjs usa permissionDecision: 'allow' (risco de bypass). Rode ai-kit sync.");
         } else {
           ok("filtrar-saida-testes.cjs endurecido (sem bypass de auto-allow)");
@@ -798,6 +792,14 @@ function runListStacks() {
 }
 
 function main() {
+  if (process.argv[2] === "worker") {
+    const worker = require("./worker/index.cjs");
+    worker.runWorkerCommand(process.argv.slice(3)).catch((err) => {
+      console.error("Erro no worker:", err.message);
+      process.exit(1);
+    });
+    return;
+  }
   const { cmd, opts } = parseArgs(process.argv);
   if (opts.help || !cmd) {
     printHelp();
@@ -821,8 +823,8 @@ function main() {
   }
 }
 
+module.exports = { collectTelemetry, listAvailableStacks, parseProjectYaml };
+
 if (require.main === module) {
   main();
 }
-
-module.exports = { collectTelemetry, listAvailableStacks, parseProjectYaml };

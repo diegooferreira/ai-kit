@@ -1,0 +1,10 @@
+# Dados locais do Worker (contém Bot Token do Telegram — nunca commitar)
+.worker-data/
+
+# Temporários e dependências
+node_modules/
+.tmp/
+.env
+.env.*
+!.env.example
+*.log

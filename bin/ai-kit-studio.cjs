@@ -20,12 +20,13 @@ const PROTECTED_FILES = new Set([
   "core/.claude/settings.json",
   "core/.claude/hooks/proteger-arquivos.cjs",
   "core/.claude/hooks/verificar-regras.cjs",
-  "core/.claude/hooks/filtrar-saida-testes.cjs"
+  "core/.claude/hooks/filtrar-saida-testes.cjs",
+  "core/.claude/hooks/worker-bridge.cjs"
 ]);
 
 function safeResolve(relPath) {
   const clean = String(relPath || "").replace(/\\/g, "/").replace(/^\/+/, "");
-  if (!clean || clean.includes("..")) return null;
+  if (!clean || clean.includes("..") || clean.startsWith(".worker-data")) return null;
   const full = path.resolve(KIT_ROOT, clean);
   if (!full.startsWith(KIT_ROOT + path.sep) && full !== KIT_ROOT) return null;
   return { full, rel: path.relative(KIT_ROOT, full).replace(/\\/g, "/") };
@@ -198,7 +199,7 @@ function computeGuardrails() {
   const filterHook = readRel("core/.claude/hooks/filtrar-saida-testes.cjs");
   const filterCode = stripJsComments(filterHook);
   const hasAutoAllow = /\bpermissionDecision\s*:\s*["']allow["']/.test(filterCode);
-
+  const bridgeHook = readRel("core/.claude/hooks/worker-bridge.cjs");
   const protectHook = readRel("core/.claude/hooks/proteger-arquivos.cjs");
   const verifyHook = readRel("core/.claude/hooks/verificar-regras.cjs");
   const settingsRaw = readRel("core/.claude/settings.json");
@@ -260,6 +261,12 @@ function computeGuardrails() {
       title: "Telemetria determinística (Diff_Hash + Test_integrity)",
       ok: cliRaw.includes("collectTelemetry") && cliRaw.includes("diffHash"),
       detail: "ai-kit telemetry gera evidência objetiva fora do LLM para validar entrega e arquivamento."
+    },
+    {
+      id: "worker-remote-bridge",
+      title: "Ponte remota fail-closed + visibilidade de subagentes (v2.2)",
+      ok: bridgeHook.includes("PermissionRequest") && bridgeHook.includes("AI_KIT_WORKER_URL") && Boolean(settings?.hooks?.SubagentStart),
+      detail: "worker-bridge.cjs monitora SubagentStart/Stop e encaminha PermissionRequest ao Telegram (inativo no uso manual)."
     }
   ];
 }

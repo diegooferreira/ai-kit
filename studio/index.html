@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI-Kit Studio v2.1 — Gestão, Guardrails & Playbooks</title>
+  <title>AI-Kit Studio v2.2.1 — Gestão, Guardrails, Playbooks & Worker</title>
   <style>
     :root {
       --bg: #0b0e14;
@@ -687,7 +687,7 @@
           <div class="brand-dot">AK</div>
           <span>AI-Kit Studio</span>
         </div>
-        <span class="version-pill" id="kit-version">v2.1</span>
+        <span class="version-pill" id="kit-version">v2.2.1</span>
       </div>
 
       <nav class="nav">
@@ -712,6 +712,10 @@
         <button class="nav-btn" data-tab="brownfield">
           <span class="nav-left"><span>↻</span> Projeto Existente</span>
           <span class="nav-count">Brown</span>
+        </button>
+        <button class="nav-btn" data-tab="worker">
+          <span class="nav-left"><span>✈</span> Worker Telegram</span>
+          <span class="nav-count">v2.2.1</span>
         </button>
       </nav>
 
@@ -741,7 +745,7 @@
           <div class="grid-2">
             <div class="card">
               <div class="card-header">
-                <h2>Blindagens Anti-Vibe-Coding (v2.1)</h2>
+                <h2>Blindagens Anti-Vibe-Coding (v2.2.1)</h2>
                 <span class="badge badge-ok" id="guardrails-badge">—</span>
               </div>
               <div class="guard-list" id="guard-list"></div>
@@ -948,6 +952,31 @@
           </div>
           <div id="bf-output"></div>
         </section>
+
+        <!-- TAB 6: WORKER TELEGRAM -->
+        <section class="tab-pane" id="tab-worker">
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">
+              <h2>AI-Kit Worker — Controle Multi-IA pelo Celular (Telegram)</h2>
+              <span class="badge badge-ok">Claude CLI + Antigravity CLI · git worktree</span>
+            </div>
+            <p style="margin:0 0 12px;color:var(--text-muted);font-size:13px;">
+              Orquestra múltiplos projetos via <strong>1 Bot + 1 Supergrupo Privado com Tópicos</strong>. Cada projeto roda no seu tópico com Card fixado, monitoramento de subagentes (<code>SubagentStart/Stop</code>), watchdog de silêncio e aprovação fail-closed de comandos fora da whitelist.
+            </p>
+            <div class="form-grid" style="margin-bottom:0;">
+              <div>
+                <label class="field-label">Slug do Projeto Piloto</label>
+                <input type="text" id="wk-slug" value="qas" oninput="renderWorkerGuide()" />
+              </div>
+              <div style="grid-column: span 2;">
+                <label class="field-label">Caminho Local do Projeto</label>
+                <input type="text" id="wk-path" value="D:\Projetos\qas" oninput="renderWorkerGuide()" />
+              </div>
+            </div>
+          </div>
+          <div id="wk-output"></div>
+        </section>
+
       </main>
     </div>
   </div>
@@ -1030,7 +1059,8 @@
       catalog: ["Catálogo & Editor do AI-Kit", "Inspecione, edite e evolua skills, rules, subagentes, hooks e stack packs com validação ao vivo."],
       ops: ["Operações em Projetos (Doctor · Telemetria · Sync)", "Execute validações e sincronizações direto em qualquer repositório local sem decorar flags."],
       greenfield: ["Playbook: Projeto Novo (Greenfield)", "Comandos, templates prontos (.ai/project.yaml, AGENTS.md, CLAUDE.md) e prompts de início seguro."],
-      brownfield: ["Playbook: Projeto Existente (Brownfield)", "Migração em 6 passos com --adopt em branch dedicada, mapeamento de domínio e zero quebra de código."]
+      brownfield: ["Playbook: Projeto Existente (Brownfield)", "Migração em 6 passos com --adopt em branch dedicada, mapeamento de domínio e zero quebra de código."],
+      worker: ["Worker Local + Controle via Telegram (v2.2.1)", "Setup do Supergrupo com Tópicos, comandos PowerShell, aprovação de risco HIGH no PC e referência mobile."]
     };
 
     function toast(msg, kind = "ok") {
@@ -1089,6 +1119,7 @@
       renderStackSelectors();
       renderGreenfield();
       renderBrownfield();
+      renderWorkerGuide();
 
       if (keepSelected && state.selectedPath) {
         const exists = data.items.some((i) => i.path === state.selectedPath);
@@ -1603,6 +1634,7 @@ ai-kit doctor --strict --target .`;
 !.env.example
 .tmp/
 .ai-kit-backup/
+.worktrees/
 node_modules/
 bin/
 obj/
@@ -1705,6 +1737,61 @@ ai-kit telemetry --target .
         codeCard(2, "Prompt de Migração Brownfield em 6 Passos", "Colar no Planejador/Claude (T1)", migrationPrompt),
         codeCard(3, "Validação Pós-Migração (--strict + --prune + telemetry)", "Gate final", verifyCmd),
         codeCard(4, "Prompt para a 1ª Change Segura em Código Legado", "Após merge da adoção", firstLegacyChange)
+      ].join("");
+    }
+
+
+    function renderWorkerGuide() {
+      const slug = document.getElementById("wk-slug").value.trim() || "qas";
+      const projPath = document.getElementById("wk-path").value.trim() || "D:\\Projetos\\qas";
+
+      const tgSteps = `1. No Telegram, abra @BotFather e envie /newbot -> guarde o Token HTTP.
+2. Ainda no @BotFather, envie /setprivacy -> selecione seu bot -> Disable.
+3. Crie um Novo Grupo privado (só você + o bot), ex.: "AI-Kit Control".
+4. Em Editar Grupo -> ative Tópicos (Fórum).
+5. Em Administradores -> promova o bot a Admin (com permissão de fixar mensagens).
+6. Crie um tópico #geral e um tópico por projeto (ex.: #${slug}).`;
+
+      const psSetup = `# 1. Atualize o projeto piloto para instalar o hook worker-bridge.cjs (v2.2.1)
+ai-kit sync --prune --target "${projPath}"
+ai-kit doctor --strict --target "${projPath}"
+
+# 2. Rode o wizard de setup do Telegram (escuta /registrar nos tópicos)
+ai-kit worker setup-telegram
+
+# 3. No Telegram, envie nos respectivos tópicos:
+#    Em #geral:   /registrar geral
+#    Em #${slug}: /registrar ${slug} ${projPath}
+
+# 4. Aperte Ctrl+C no setup, valide tudo e inicie o daemon:
+ai-kit worker doctor
+ai-kit worker start`;
+
+      const mobileCommands = `# Comandos dentro do tópico #${slug} no Telegram:
+/status               -> Atualiza o Card ao vivo (PID, subagente ativo, cota 5h/7d, checkout VS Code)
+/fila                 -> Lista próximas fatias pendentes em docs/fila ou docs/plano.md
+/explorar <slug>      -> Roda openspec-explore (você responde em texto livre direto no tópico)
+/iniciar <slug>       -> Cria git worktree, roda openspec-propose + revisar-proposta e pausa para OK
+/homologar            -> Roda homologar-change + telemetria determinística -> estaciona em PRONTO_REVISAO
+/telemetria           -> Roda ai-kit telemetry (Diff_Hash, Test_integrity, Sensitive_touched)
+/logs                 -> Últimas 25 linhas do agente ativo
+/pausar · /retomar · /abortar`;
+
+      const pcHighAndClose = `# Se uma proposta for classificada como risk: high (bloqueada no celular):
+# 1. Revise proposal.md e design.md no monitor do PC
+# 2. Libere explicitamente no PowerShell:
+ai-kit worker approve ${slug}
+# 3. Envie /retomar no tópico do Telegram para iniciar /aplicar-change + homologação
+
+# Quando o Telegram avisar "PRONTO PARA REVISÃO NO PC":
+# 1. Abra o worktree no VS Code e revise o git diff
+# 2. Rode concluir-change no PC (ele arquiva, commita, faz merge --no-ff na main, push e remove o worktree)`;
+
+      document.getElementById("wk-output").innerHTML = [
+        codeCard(1, "Preparação no Telegram (3 minutos)", "Supergrupo com Tópicos", tgSteps),
+        codeCard(2, "Comandos PowerShell — Sync v2.2.1 + Setup + Start", "PC Local", psSetup),
+        codeCard(3, "Comandos Diários no Celular", "Tópico #" + slug, mobileCommands),
+        codeCard(4, "Aprovação Risco HIGH e Fechamento na main", "Exclusivo PC", pcHighAndClose)
       ].join("");
     }
 
