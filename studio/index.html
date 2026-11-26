@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI-Kit Studio v2.2.1 — Gestão, Guardrails, Playbooks & Worker</title>
+  <title>AI-Kit Studio v2.2.5 — Gestão, Guardrails, Playbooks & Worker</title>
   <style>
     :root {
       --bg: #0b0e14;
@@ -687,7 +687,7 @@
           <div class="brand-dot">AK</div>
           <span>AI-Kit Studio</span>
         </div>
-        <span class="version-pill" id="kit-version">v2.2.1</span>
+        <span class="version-pill" id="kit-version">v2.2.5</span>
       </div>
 
       <nav class="nav">
@@ -715,7 +715,7 @@
         </button>
         <button class="nav-btn" data-tab="worker">
           <span class="nav-left"><span>✈</span> Worker Telegram</span>
-          <span class="nav-count">v2.2.1</span>
+          <span class="nav-count">v2.2.5</span>
         </button>
       </nav>
 
@@ -745,7 +745,7 @@
           <div class="grid-2">
             <div class="card">
               <div class="card-header">
-                <h2>Blindagens Anti-Vibe-Coding (v2.2.1)</h2>
+                <h2>Blindagens Anti-Vibe-Coding (v2.2.5)</h2>
                 <span class="badge badge-ok" id="guardrails-badge">—</span>
               </div>
               <div class="guard-list" id="guard-list"></div>
@@ -1060,7 +1060,7 @@
       ops: ["Operações em Projetos (Doctor · Telemetria · Sync)", "Execute validações e sincronizações direto em qualquer repositório local sem decorar flags."],
       greenfield: ["Playbook: Projeto Novo (Greenfield)", "Comandos, templates prontos (.ai/project.yaml, AGENTS.md, CLAUDE.md) e prompts de início seguro."],
       brownfield: ["Playbook: Projeto Existente (Brownfield)", "Migração em 6 passos com --adopt em branch dedicada, mapeamento de domínio e zero quebra de código."],
-      worker: ["Worker Local + Controle via Telegram (v2.2.1)", "Setup do Supergrupo com Tópicos, comandos PowerShell, aprovação de risco HIGH no PC e referência mobile."]
+      worker: ["Worker Local + Controle via Telegram (v2.2.5)", "Setup do Supergrupo com Tópicos, comandos PowerShell, aprovação de risco HIGH no PC e referência mobile."]
     };
 
     function toast(msg, kind = "ok") {
@@ -1752,7 +1752,7 @@ ai-kit telemetry --target .
 5. Em Administradores -> promova o bot a Admin (com permissão de fixar mensagens).
 6. Crie um tópico #geral e um tópico por projeto (ex.: #${slug}).`;
 
-      const psSetup = `# 1. Atualize o projeto piloto para instalar o hook worker-bridge.cjs (v2.2.1)
+      const psSetup = `# 1. Atualize o projeto piloto para instalar o hook worker-bridge.cjs (v2.2.5)
 ai-kit sync --prune --target "${projPath}"
 ai-kit doctor --strict --target "${projPath}"
 
@@ -1789,7 +1789,7 @@ ai-kit worker approve ${slug}
 
       document.getElementById("wk-output").innerHTML = [
         codeCard(1, "Preparação no Telegram (3 minutos)", "Supergrupo com Tópicos", tgSteps),
-        codeCard(2, "Comandos PowerShell — Sync v2.2.1 + Setup + Start", "PC Local", psSetup),
+        codeCard(2, "Comandos PowerShell — Sync v2.2.5 + Setup + Start", "PC Local", psSetup),
         codeCard(3, "Comandos Diários no Celular", "Tópico #" + slug, mobileCommands),
         codeCard(4, "Aprovação Risco HIGH e Fechamento na main", "Exclusivo PC", pcHighAndClose)
       ].join("");

@@ -77,6 +77,17 @@ class TelegramClient {
     }
   }
 
+  async deleteMessage(chatId, messageId) {
+    try {
+      return await this.call("deleteMessage", {
+        chat_id: chatId,
+        message_id: Number(messageId)
+      }, 10000);
+    } catch (_) {
+      return null;
+    }
+  }
+
   async pinMessage(chatId, messageId) {
     try {
       return await this.call("pinChatMessage", {

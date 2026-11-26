@@ -316,7 +316,7 @@ class AgentRunner {
 
   detectErrorSignals(text) {
     const lower = String(text || "").toLowerCase();
-    if (/rate.?limit|quota.?exceeded|usage limit|too many requests|429\b|overloaded/i.test(lower)) {
+    if (/rate.?limit|quota.?exceeded|usage.?limit|resource_exhausted|hit your .*limit|too many requests|429\b|overloaded/i.test(lower)) {
       this.quotaHit = true;
     }
     if (/login required|not authenticated|please log in|unauthorized|oauth.*expired|run.*auth login/i.test(lower)) {
@@ -587,6 +587,10 @@ function buildAgyArgs(prompt, stage, defaults, project) {
   const model = (project && project.agyModel) || defaults.agyModel;
   if (model) {
     args.push("--model", model);
+  }
+  if (project && project.agyLogFile) {
+    try { fs.mkdirSync(path.dirname(project.agyLogFile), { recursive: true }); } catch (_) {}
+    args.push("--log-file", project.agyLogFile);
   }
   return args;
 }

@@ -11,6 +11,7 @@ const WORKER_HOME = process.env.AI_KIT_WORKER_HOME || path.join(KIT_ROOT, ".work
 const CONFIG_PATH = path.join(WORKER_HOME, "config.json");
 const STATE_PATH = path.join(WORKER_HOME, "state.json");
 const EVENTS_LOG = path.join(WORKER_HOME, "events.ndjson");
+const RUNTIME_DISCOVERY_PATH = path.join(os.homedir(), ".ai-kit-worker-runtime.json");
 
 const DEFAULT_CONFIG = {
   version: 1,
@@ -38,7 +39,11 @@ const DEFAULT_CONFIG = {
     stallTestSec: 360,
     stageTimeoutMin: 25,
     permissionTimeoutMin: 15,
-    cardRefreshSec: 60
+    cardRefreshSec: 60,
+    mirrorPollSec: 15,
+    mirrorIdleSec: 180,
+    mirrorLongIdleSec: 360,
+    diskActiveWindowSec: 120
   },
   projects: {}
 };
@@ -162,6 +167,23 @@ function findProjectByThread(cfg, threadId) {
   return null;
 }
 
+
+function writeRuntimeDiscovery(data) {
+  try {
+    const tmpPath = `${RUNTIME_DISCOVERY_PATH}.${process.pid}.tmp`;
+    fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2) + "\n", "utf8");
+    fs.renameSync(tmpPath, RUNTIME_DISCOVERY_PATH);
+  } catch (_) {}
+}
+
+function clearRuntimeDiscovery() {
+  try {
+    if (fs.existsSync(RUNTIME_DISCOVERY_PATH)) {
+      fs.unlinkSync(RUNTIME_DISCOVERY_PATH);
+    }
+  } catch (_) {}
+}
+
 module.exports = {
   KIT_ROOT,
   LEGACY_WORKER_HOME,
@@ -169,6 +191,7 @@ module.exports = {
   CONFIG_PATH,
   STATE_PATH,
   EVENTS_LOG,
+  RUNTIME_DISCOVERY_PATH,
   DEFAULT_CONFIG,
   loadConfig,
   saveConfig,
@@ -177,5 +200,7 @@ module.exports = {
   appendEvent,
   maskToken,
   slugifyProject,
-  findProjectByThread
+  findProjectByThread,
+  writeRuntimeDiscovery,
+  clearRuntimeDiscovery
 };

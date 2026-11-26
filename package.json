@@ -1,6 +1,6 @@
 {
   "name": "ai-kit",
-  "version": "2.2.1",
+  "version": "2.2.5",
   "description": "Biblioteca central multi-IA (OpenSpec SDD) endurecida anti-vibe-coding com sync protegido, doctor, telemetry, Studio web local e Worker remoto via Telegram (Claude CLI + Antigravity CLI).",
   "private": true,
   "bin": {

@@ -50,7 +50,7 @@ const SENSITIVE_PATH_REGEXES = [
 
 function printHelp() {
   console.log(`
-ai-kit v2.2.1 — Biblioteca Central Multi-IA + Studio + Worker Telegram
+ai-kit v2.2.5 — Biblioteca Central Multi-IA + Studio + Worker Telegram
 
 Comandos:
   ai-kit studio [opcoes]     Abre o AI-Kit Studio (painel web local de gestao e playbooks)
@@ -438,7 +438,7 @@ function runDoctor(opts) {
   const warn = (msg) => { warns++; console.log(`  [WARN]  ${msg}`); };
   const err = (msg) => { errors++; console.log(`  [ERRO]  ${msg}`); };
 
-  console.log(`\nai-kit doctor v2.2 -> ${targetRoot}\n`);
+  console.log(`\nai-kit doctor v2.2.5 -> ${targetRoot}\n`);
 
   // 1. Contrato .ai/project.yaml
   if (!cfg.exists) {
@@ -552,7 +552,13 @@ function runDoctor(opts) {
     const settingsPath = path.join(targetRoot, ".claude", "settings.json");
     if (fs.existsSync(settingsPath)) {
       try {
-        const st = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+        const rawSettings = fs.readFileSync(settingsPath, "utf8");
+        if (/"matcher"\s*:\s*"\*"/.test(rawSettings)) {
+          err('settings.json usa "matcher": "*" (regex invalida no Claude Code; use ".*"). Rode ai-kit sync.');
+        } else {
+          ok('settings.json com matchers regex validos (".*")');
+        }
+        const st = JSON.parse(rawSettings);
         const pct = Number(st?.env?.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE || 0);
         if (pct > 0 && pct < 40) {
           warn(`settings.json usa CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=${pct} (muito agressivo; recomendado >= 50).`);

@@ -13,7 +13,10 @@ const {
   loadState,
   saveState,
   maskToken,
-  slugifyProject
+  slugifyProject,
+  RUNTIME_DISCOVERY_PATH,
+  writeRuntimeDiscovery,
+  clearRuntimeDiscovery
 } = require("./config.cjs");
 const { TelegramClient } = require("./telegram.cjs");
 const { HookBridgeServer } = require("./hook-server.cjs");
@@ -30,7 +33,8 @@ Subcomandos:
   ai-kit worker start                    Inicia o worker (Telegram Polling + Hook Server + Watchdog)
   ai-kit worker status                   Mostra projetos cadastrados, estado e PIDs
   ai-kit worker approve <slug>           Aprova no PC uma spec marcada como risk: high
-  ai-kit worker doctor                   Valida Node, Claude CLI, Antigravity CLI, Git e Telegram
+  ai-kit worker doctor                   Valida Node, Claude CLI, Antigravity CLI, Git, hooks e Telegram
+  ai-kit worker test-bridge <slug>       Testa o hook worker-bridge.cjs ponta a ponta (espelho VS Code)
 
 Arquivos locais (dentro do ai-kit, protegidos no .gitignore):
   Config: ${CONFIG_PATH}
@@ -279,9 +283,25 @@ async function runWorkerDoctor() {
   } else {
     for (const [id, p] of projs) {
       if (fs.existsSync(p.path)) {
-        const hasBridge = fs.existsSync(path.join(p.path, ".claude", "hooks", "worker-bridge.cjs"));
-        if (hasBridge) ok(`Projeto "${id}" -> ${p.path} (thread=${p.threadId ?? "—"}, worker-bridge OK)`);
-        else warn(`Projeto "${id}" -> ${p.path} sem worker-bridge.cjs (rode: ai-kit sync --target "${p.path}")`);
+        const bridgePath = path.join(p.path, ".claude", "hooks", "worker-bridge.cjs");
+        const stPath = path.join(p.path, ".claude", "settings.json");
+        const hasBridge = fs.existsSync(bridgePath);
+        let badMatcher = false;
+        let hasUserPromptHook = false;
+        if (fs.existsSync(stPath)) {
+          try {
+            const stRaw = fs.readFileSync(stPath, "utf8");
+            badMatcher = /"matcher"\s*:\s*"\*"/.test(stRaw);
+            hasUserPromptHook = stRaw.includes("UserPromptSubmit");
+          } catch (_) {}
+        }
+        if (!hasBridge) {
+          warn(`Projeto "${id}" -> ${p.path} sem worker-bridge.cjs (rode: ai-kit sync --prune --target "${p.path}")`);
+        } else if (badMatcher || !hasUserPromptHook) {
+          err(`Projeto "${id}" usa settings.json antigo (matcher "*" inválido no Claude Code). Rode: ai-kit sync --prune --target "${p.path}" e abra nova sessão no VS Code.`);
+        } else {
+          ok(`Projeto "${id}" -> ${p.path} (thread=${p.threadId ?? "—"}, worker-bridge + matcher ".*" OK)`);
+        }
       } else {
         err(`Projeto "${id}" aponta para pasta inexistente: ${p.path}`);
       }
@@ -308,27 +328,45 @@ async function runStart() {
     port: cfg.hookServer.port,
     permissionTimeoutMin: cfg.defaults.permissionTimeoutMin,
     onEvent: (ev) => orchestrator && orchestrator.handleHookTelemetry(ev),
+    onMirrorEvent: (ev) => orchestrator && orchestrator.handleMirrorEvent(ev),
     onPermissionRequest: (reqId, ev) => orchestrator && orchestrator.handlePermissionRequest(reqId, ev)
   });
 
   const bridgeInfo = await hookServer.start();
+
+  // Grava ponteiro efêmero de descoberta para Modo Espelho Passivo (VS Code -> Telegram)
+  const projectsMap = {};
+  for (const [id, p] of Object.entries(cfg.projects || {})) {
+    if (p && p.path) projectsMap[id] = p.path;
+  }
+  writeRuntimeDiscovery({
+    pid: process.pid,
+    url: bridgeInfo.url,
+    token: bridgeInfo.token,
+    startedAt: new Date().toISOString(),
+    projects: projectsMap
+  });
+
   orchestrator = new WorkerOrchestrator(cfg, tg, hookServer);
   await orchestrator.start();
 
-  console.log("\n=== AI-Kit Worker v2.2 Online ===");
+  console.log("\n=== AI-Kit Worker v2.2.5 Online (Modo Espelho VS Code ativo) ===");
   console.log(`  Bot Telegram: @${me.username} (Long Polling ativo)`);
   console.log(`  Hook Bridge:  ${bridgeInfo.url} (protegido por token)`);
+  console.log(`  Espelho:      ${RUNTIME_DISCOVERY_PATH}`);
   console.log(`  Projetos:     ${Object.keys(cfg.projects).join(", ") || "nenhum"}`);
   console.log(`  Config:       ${CONFIG_PATH}`);
   console.log("Pressione Ctrl+C para encerrar com segurança.\n");
 
   const shutdown = () => {
     console.log("\nEncerrando AI-Kit Worker...");
+    clearRuntimeDiscovery();
     tg.stopPolling();
     orchestrator.stop();
     hookServer.stop();
     process.exit(0);
   };
+  process.on("exit", clearRuntimeDiscovery);
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
@@ -336,6 +374,55 @@ async function runStart() {
     (upd) => orchestrator.handleTelegramUpdate(upd),
     (err) => console.error(`[${new Date().toTimeString().slice(0, 8)}] Erro polling:`, err.message)
   );
+}
+
+
+function runTestBridge(args) {
+  const slug = slugifyProject(args[0]);
+  const cfg = loadConfig();
+  const targetSlug = slug || Object.keys(cfg.projects || {})[0];
+  if (!targetSlug || !cfg.projects[targetSlug]) {
+    console.error("Uso: ai-kit worker test-bridge <slug-do-projeto>");
+    process.exit(1);
+  }
+  const proj = cfg.projects[targetSlug];
+  const bridgePath = path.join(proj.path, ".claude", "hooks", "worker-bridge.cjs");
+  if (!fs.existsSync(bridgePath)) {
+    console.error(`[ERRO] Hook não encontrado em ${bridgePath}. Rode: ai-kit sync --prune --target "${proj.path}"`);
+    process.exit(1);
+  }
+  if (!fs.existsSync(RUNTIME_DISCOVERY_PATH)) {
+    console.error(`[ERRO] Worker não parece estar rodando (ausente: ${RUNTIME_DISCOVERY_PATH}). Rode \`ai-kit worker start\` em outro terminal primeiro.`);
+    process.exit(1);
+  }
+
+  const fakePayload = JSON.stringify({
+    hook_event_name: "Ping",
+    cwd: proj.path,
+    session_id: "bridge-self-test"
+  });
+
+  console.log(`Testando hook espelho (Ping limpo) de "${targetSlug}": ${bridgePath}`);
+  try {
+    const out = execFileSync(process.execPath, [bridgePath], {
+      input: fakePayload,
+      encoding: "utf8",
+      env: { ...process.env, CLAUDE_PROJECT_DIR: proj.path },
+      timeout: 5000
+    }).trim();
+    let parsed = {};
+    try { parsed = JSON.parse(out); } catch (_) {}
+    if (parsed.ok) {
+      console.log(`[OK] Ponte validada ponta a ponta! Projeto="${parsed.projectId}" -> ${parsed.workerUrl}`);
+      console.log("[OK] O Card no Telegram NÃO foi sujado por este teste (status real preservado).");
+    } else {
+      console.error(`[ERRO] Hook executou mas o worker não respondeu pong: ${out || "{}"}`);
+      process.exit(1);
+    }
+  } catch (err) {
+    console.error(`[ERRO] Falha ao executar worker-bridge.cjs: ${err.message}`);
+    process.exit(1);
+  }
 }
 
 async function runWorkerCommand(rawArgs) {
@@ -351,6 +438,7 @@ async function runWorkerCommand(rawArgs) {
   if (sub === "status") return runStatus();
   if (sub === "approve") return runApprovePc(rest);
   if (sub === "doctor") return runWorkerDoctor();
+  if (sub === "test-bridge") return runTestBridge(rest);
   if (sub === "start") return runStart();
 
   console.error(`Subcomando desconhecido de worker: "${sub}"`);

@@ -1,4 +1,4 @@
-# ai-kit v2.2.1 — Biblioteca Central Multi-IA + Studio + Worker Telegram
+# ai-kit v2.2.5 — Biblioteca Central Multi-IA + Studio + Worker Telegram
 
 Repositório centralizado de skills, subagentes, rules modulares (`paths:`), hooks `.cjs` anti-vibe-coding, stack packs, **AI-Kit Studio** (painel web local) e **AI-Kit Worker** (orquestrador headless via Telegram usando Claude Code CLI + Antigravity CLI em `git worktree` isolado).
 
@@ -144,6 +144,13 @@ Garanta `.tmp/`, `.ai-kit-backup/` e `.worktrees/` no `.gitignore`, revise o dif
 | `/telemetria` | Executa `ai-kit telemetry` no worktree (`Diff_Hash`, `Test_integrity`, `Sensitive_touched`, `diff_stat`). |
 | `/logs` | Exibe as últimas 25 linhas do agente ativo. |
 | `/pausar` · `/retomar` · `/abortar` | Pausa após a etapa atual, retoma pós-cota/queda via `handoff.md` ou mata a árvore de processos preservando o worktree. |
+
+
+### Modo Espelho Passivo (VS Code → Telegram)
+Mesmo quando você inicia uma proposta ou `/aplicar-change` manualmente pelo **VS Code**, o Worker espelha automaticamente o progresso no tópico do projeto sem interferir na sua sessão local:
+- Atualiza o Card fixado para `🔵 RODANDO NO VS CODE (espelhado)` com fase OpenSpec, contagem de `tasks.md` (`X/Y [x]`), subagente ativo e última ferramenta executada.
+- Dispara alerta no Telegram se o VS Code ficar aguardando sua permissão (`PermissionRequest`), falhar (`StopFailure`), ficar sem eventos novos por 3–6 min ou atingir um marco (`AGUARDANDO_APROVACAO`, `PRONTA_PARA_HOMOLOGACAO`, `HOMOLOGADO`, `BLOQUEADA`).
+- Requisito único: o projeto deve estar sincronizado com a v2.2.5 (`ai-kit sync --prune --target <projeto>`) e o `ai-kit worker start` em execução.
 
 ### Ações Exclusivas no PC (Regras Anti-Vibe-Coding)
 - **Proposta classificada como `risk: high`** (auth, permissões, multi-tenant/RLS, migrations destrutivas, financeiro/fiscal): aprovação mobile fica bloqueada. Revise `proposal.md`/`design.md` no monitor e libere com:

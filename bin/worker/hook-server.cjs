@@ -11,6 +11,7 @@ class HookBridgeServer {
     this.token = crypto.randomBytes(24).toString("hex");
     this.permissionTimeoutMs = (Number(opts.permissionTimeoutMin) || 15) * 60 * 1000;
     this.onEvent = opts.onEvent || (() => {});
+    this.onMirrorEvent = opts.onMirrorEvent || (() => {});
     this.onPermissionRequest = opts.onPermissionRequest || (() => {});
     this.pending = new Map();
     this.server = null;
@@ -88,9 +89,24 @@ class HookBridgeServer {
       return;
     }
 
+    if (req.url === "/hook/ping") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, pong: true, projectId: payload.projectId || null, ts: new Date().toISOString() }));
+      return;
+    }
+
     if (req.url === "/hook/event") {
       try {
         this.onEvent(payload);
+      } catch (_) {}
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    if (req.url === "/hook/mirror-event") {
+      try {
+        this.onMirrorEvent(payload);
       } catch (_) {}
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));

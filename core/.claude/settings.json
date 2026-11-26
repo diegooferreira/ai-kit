@@ -104,7 +104,7 @@
         ]
       },
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -124,7 +124,7 @@
         ]
       },
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -135,7 +135,7 @@
     ],
     "SubagentStart": [
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -146,7 +146,7 @@
     ],
     "SubagentStop": [
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -157,7 +157,7 @@
     ],
     "PermissionRequest": [
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -169,7 +169,29 @@
     ],
     "StopFailure": [
       {
-        "matcher": "*",
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/worker-bridge.cjs\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/worker-bridge.cjs\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",

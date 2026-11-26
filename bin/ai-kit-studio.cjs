@@ -264,8 +264,8 @@ function computeGuardrails() {
     },
     {
       id: "worker-remote-bridge",
-      title: "Ponte remota fail-closed + visibilidade de subagentes (v2.2)",
-      ok: bridgeHook.includes("PermissionRequest") && bridgeHook.includes("AI_KIT_WORKER_URL") && Boolean(settings?.hooks?.SubagentStart),
+      title: "Ponte remota fail-closed + visibilidade de subagentes (v2.2.5)",
+      ok: bridgeHook.includes("PermissionRequest") && bridgeHook.includes("AI_KIT_WORKER_URL") && Boolean(settings?.hooks?.SubagentStart) && Boolean(settings?.hooks?.UserPromptSubmit) && !/"matcher"\s*:\s*"\*"/.test(settingsRaw),
       detail: "worker-bridge.cjs monitora SubagentStart/Stop e encaminha PermissionRequest ao Telegram (inativo no uso manual)."
     }
   ];

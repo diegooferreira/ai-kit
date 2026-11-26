@@ -5,11 +5,16 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const {
+  WORKER_HOME,
   loadState,
   saveState,
   appendEvent,
   findProjectByThread
 } = require("./config.cjs");
+const {
+  inspectClaudeSession,
+  inspectAntigravityGlobal
+} = require("./session-watcher.cjs");
 const {
   buildChangeName,
   ensureWorktree,
@@ -19,6 +24,8 @@ const {
   readHandoffSnippet,
   listPendingSlices,
   detectManualSession,
+  inspectMainCheckout,
+  parseTasksProgress,
   listDirtyFiles,
   collectTelemetry
 } = require("./git-worktree.cjs");
@@ -48,6 +55,14 @@ function fmtResetTime(epochSec) {
   return d.toTimeString().slice(0, 5);
 }
 
+const MILESTONE_PHASES = new Set([
+  "AGUARDANDO_APROVACAO",
+  "PRONTA_PARA_HOMOLOGACAO",
+  "HOMOLOGADO",
+  "AGUARDANDO_HUMANO",
+  "BLOQUEADA"
+]);
+
 class WorkerOrchestrator {
   constructor(cfg, telegram, hookServer) {
     this.cfg = cfg;
@@ -56,7 +71,9 @@ class WorkerOrchestrator {
     this.state = loadState();
     this.activeRunners = new Map();
     this.pendingPermsMeta = new Map();
+    this.mirrors = new Map();
     this.cardTimer = null;
+    this.mirrorTimer = null;
   }
 
   get chatId() {
@@ -90,12 +107,42 @@ class WorkerOrchestrator {
     return this.state.runs[projectId];
   }
 
+  getMirror(projectId) {
+    if (!this.mirrors.has(projectId)) {
+      this.mirrors.set(projectId, {
+        activeSubagents: new Map(),
+        logLines: [],
+        lastEventAt: 0,
+        lastEventName: null,
+        lastSummary: null,
+        runningLongTool: false,
+        turnStopped: false,
+        idleAlertSent: false,
+        sessionNotifiedAt: 0,
+        lastCardPushAt: 0,
+        lastDiskKey: "",
+        lastChangeName: null,
+        lastNotifiedPhase: null,
+        lastNotifiedQuotaId: null,
+        lastNotifiedErrorId: null,
+        pendingQuotaResetAt: null,
+        quotaNotifiedResetLabel: null,
+        claudeSession: null,
+        antigravityGlobal: null,
+        disk: null,
+        seeded: false
+      });
+    }
+    return this.mirrors.get(projectId);
+  }
+
   persist() {
     saveState(this.state);
   }
 
   async start() {
     await this.recoverInterruptedRuns();
+    await this.seedMirrorSnapshots();
 
     const refreshMs = Math.max(20, Number(this.cfg.defaults.cardRefreshSec) || 60) * 1000;
     this.cardTimer = setInterval(() => {
@@ -104,16 +151,21 @@ class WorkerOrchestrator {
       }
     }, refreshMs);
 
+    const mirrorPollMs = Math.max(8, Number(this.cfg.defaults.mirrorPollSec) || 15) * 1000;
+    this.mirrorTimer = setInterval(() => {
+      this.pollMirrors().catch(() => {});
+    }, mirrorPollMs);
+
     try {
       await this.tg.setMyCommands([
-        { command: "status", description: "Ver status real (PID, subagente, cota e worktree)" },
+        { command: "status", description: "Ver status real (Worker ou VS Code espelhado)" },
         { command: "fila", description: "Listar próximas fatias do projeto" },
         { command: "iniciar", description: "Iniciar change: /iniciar <slug>" },
         { command: "explorar", description: "Rodar openspec-explore: /explorar <slug>" },
         { command: "propor", description: "Rodar openspec-propose + revisão: /propor <slug>" },
         { command: "homologar", description: "Rodar homologar-change no worktree ativo" },
-        { command: "telemetria", description: "Rodar ai-kit telemetry no worktree ativo" },
-        { command: "logs", description: "Ver últimas 25 linhas do agente ativo" },
+        { command: "telemetria", description: "Rodar ai-kit telemetry (worktree ou checkout principal)" },
+        { command: "logs", description: "Ver últimas 25 linhas/eventos (Worker ou VS Code)" },
         { command: "pausar", description: "Pausar após a etapa atual" },
         { command: "retomar", description: "Retomar change via handoff.md" },
         { command: "abortar", description: "Matar processo ativo preservando worktree" },
@@ -125,7 +177,7 @@ class WorkerOrchestrator {
       const names = Object.keys(this.cfg.projects || {});
       await this.tg.sendMessage(
         this.chatId,
-        `🟢 AI-Kit Worker v2.2 online.\nProjetos monitorados (${names.length}): ${names.join(", ") || "nenhum"}\nUse /status dentro do tópico de cada projeto.`,
+        `🟢 AI-Kit Worker v2.2.5 online (Modo Espelho VS Code ativo).\nProjetos monitorados (${names.length}): ${names.join(", ") || "nenhum"}\nUse /status dentro do tópico de cada projeto.`,
         { threadId: this.cfg.telegram.generalThreadId, silent: true }
       ).catch(() => {});
     }
@@ -133,10 +185,405 @@ class WorkerOrchestrator {
 
   stop() {
     if (this.cardTimer) clearInterval(this.cardTimer);
+    if (this.mirrorTimer) clearInterval(this.mirrorTimer);
     for (const runner of this.activeRunners.values()) {
       runner.abort();
     }
     this.activeRunners.clear();
+  }
+
+  async seedMirrorSnapshots() {
+    for (const [projectId, proj] of Object.entries(this.cfg.projects || {})) {
+      if (!proj || !fs.existsSync(proj.path)) continue;
+      const m = this.getMirror(projectId);
+      const diskWindowSec = Number(this.cfg.defaults.diskActiveWindowSec) || 120;
+      const disk = inspectMainCheckout(proj.path, diskWindowSec);
+      const claudeSession = inspectClaudeSession(proj.path);
+      const agyGlobal = inspectAntigravityGlobal(diskWindowSec);
+      m.disk = disk;
+      m.claudeSession = claudeSession;
+      m.antigravityGlobal = agyGlobal;
+      m.seeded = true;
+
+      if (claudeSession.found && claudeSession.status === "QUOTA_EXHAUSTED" && claudeSession.quotaInfo) {
+        m.lastNotifiedQuotaId = claudeSession.quotaInfo.eventId;
+        if (claudeSession.quotaInfo.resetsAt) {
+          m.pendingQuotaResetAt = claudeSession.quotaInfo.resetsAt;
+          m.quotaNotifiedResetLabel = fmtResetTime(claudeSession.quotaInfo.resetsAt);
+        }
+      }
+
+      if (disk.hasActiveChange || (claudeSession.found && claudeSession.status === "QUOTA_EXHAUSTED")) {
+        if (disk.hasActiveChange) {
+          m.lastChangeName = disk.changeName;
+          m.lastNotifiedPhase = disk.phase;
+        }
+        m.lastDiskKey = this.computeMirrorKey(disk, claudeSession, agyGlobal);
+        const run = this.getRun(projectId);
+        if (run.status === "IDLE") {
+          await this.refreshCard(projectId, !run.cardMessageId).catch(() => {});
+        }
+      }
+    }
+  }
+
+  computeMirrorKey(disk, claudeSession, agyGlobal) {
+    const csPart = claudeSession && claudeSession.found
+      ? `${claudeSession.status}:${claudeSession.lastTool || ""}:${claudeSession.quotaInfo ? claudeSession.quotaInfo.eventId : ""}`
+      : "no-cs";
+    const agyPart = agyGlobal && agyGlobal.recentlyActive ? "agy-on" : "agy-off";
+    if (disk && disk.hasActiveChange) {
+      return `${disk.changeName}|${disk.phase}|${disk.tasks.done}/${disk.tasks.total}|${disk.dirtyCount}|${disk.diskRecentlyActive}|${csPart}|${agyPart}`;
+    }
+    return `none|${disk ? disk.dirtyCount : 0}|${disk ? disk.diskRecentlyActive : false}|${csPart}|${agyPart}`;
+  }
+
+  async pollMirrors() {
+    for (const [projectId, proj] of Object.entries(this.cfg.projects || {})) {
+      if (this.activeRunners.has(projectId)) continue;
+      if (!proj || !fs.existsSync(proj.path)) continue;
+      await this.pollMirrorProject(projectId, false);
+    }
+  }
+
+  async pollMirrorProject(projectId, fromStopEvent = false) {
+    const proj = this.cfg.projects[projectId];
+    if (!proj || !fs.existsSync(proj.path)) return;
+    if (this.activeRunners.has(projectId)) return;
+
+    const run = this.getRun(projectId);
+    const m = this.getMirror(projectId);
+    const diskWindowSec = Number(this.cfg.defaults.diskActiveWindowSec) || 120;
+    const disk = inspectMainCheckout(proj.path, diskWindowSec);
+    const claudeSession = inspectClaudeSession(proj.path);
+    const agyGlobal = inspectAntigravityGlobal(diskWindowSec);
+    m.disk = disk;
+    m.claudeSession = claudeSession;
+    m.antigravityGlobal = agyGlobal;
+
+    const now = Date.now();
+    const diskKey = this.computeMirrorKey(disk, claudeSession, agyGlobal);
+    const changed = diskKey !== m.lastDiskKey;
+
+    // 0a. Detecção determinística de COTA ESGOTADA no Claude (via .jsonl da sessão — funciona mesmo sem hook)
+    if (run.status === "IDLE" && claudeSession.found && claudeSession.status === "QUOTA_EXHAUSTED" && claudeSession.quotaInfo) {
+      const qi = claudeSession.quotaInfo;
+      if (m.lastNotifiedQuotaId !== qi.eventId) {
+        m.lastNotifiedQuotaId = qi.eventId;
+        m.idleAlertSent = true;
+        m.turnStopped = true;
+        if (qi.resetsAt) {
+          m.pendingQuotaResetAt = qi.resetsAt;
+          m.quotaNotifiedResetLabel = fmtResetTime(qi.resetsAt);
+        }
+        m.lastDiskKey = diskKey;
+        const resetLabel = qi.resetsAt ? ` às ${fmtResetTime(qi.resetsAt)}` : "";
+        const chLine = disk.hasActiveChange
+          ? `
+Change: ${disk.changeName}
+Tasks: ${disk.tasks.exists ? `${disk.tasks.done}/${disk.tasks.total} [x] (${disk.tasks.pct}%)` : "—"}`
+          : "";
+        await this.refreshCard(projectId, !run.cardMessageId).catch(() => {});
+        await this.tg.sendMessage(
+          this.chatId,
+          `⏳ Cota do Claude atingida no VS Code — ${projectId} (${qi.limitLabel})${chLine}
+Reset previsto:${resetLabel || " conferir no VS Code"}
+Você será avisado automaticamente quando a cota renovar.`,
+          { threadId: proj.threadId }
+        ).catch(() => {});
+        return;
+      }
+    }
+
+    // 0b. Aviso automático quando o horário de reset da cota do Claude chegar
+    if (run.status === "IDLE" && m.pendingQuotaResetAt && now >= m.pendingQuotaResetAt * 1000) {
+      const label = m.quotaNotifiedResetLabel || fmtResetTime(m.pendingQuotaResetAt);
+      m.pendingQuotaResetAt = null;
+      m.quotaNotifiedResetLabel = null;
+      m.lastDiskKey = diskKey;
+      await this.refreshCard(projectId, !run.cardMessageId).catch(() => {});
+      await this.tg.sendMessage(
+        this.chatId,
+        `🟢 Cota do Claude renovou (${label}) — ${projectId} já pode ser retomado!`,
+        { threadId: proj.threadId }
+      ).catch(() => {});
+      return;
+    }
+
+    // 0c. Detecção de erro de API no .jsonl (não-cota)
+    if (run.status === "IDLE" && claudeSession.found && claudeSession.status === "API_ERROR" && claudeSession.apiErrorInfo) {
+      const ei = claudeSession.apiErrorInfo;
+      if (m.lastNotifiedErrorId !== ei.eventId) {
+        m.lastNotifiedErrorId = ei.eventId;
+        m.idleAlertSent = true;
+        m.turnStopped = true;
+        m.lastDiskKey = diskKey;
+        await this.refreshCard(projectId, !run.cardMessageId).catch(() => {});
+        await this.tg.sendMessage(
+          this.chatId,
+          `❌ Erro de API no Claude (VS Code) — ${projectId}
+Código: ${ei.code}${ei.status ? ` (HTTP ${ei.status})` : ""}
+Detalhe: ${ei.rawText.slice(0, 300)}`,
+          { threadId: proj.threadId }
+        ).catch(() => {});
+        return;
+      }
+    }
+    const prevChange = m.lastChangeName;
+    const prevPhase = m.lastNotifiedPhase;
+    m.lastDiskKey = diskKey;
+
+    if (disk.hasActiveChange) {
+      m.lastChangeName = disk.changeName;
+
+      // 1. Nova change surgiu no VS Code após o boot
+      if (m.seeded && prevChange !== disk.changeName) {
+        m.lastNotifiedPhase = disk.phase;
+        if (this.chatId && run.status === "IDLE") {
+          await this.refreshCard(projectId, !run.cardMessageId).catch(() => {});
+          await this.tg.sendMessage(
+            this.chatId,
+            `📐 Nova change detectada no VS Code — ${projectId}\nChange: ${disk.changeName}\nFase: ${disk.phase}${disk.risk ? ` | Risco: ${disk.risk.toUpperCase()}` : ""}`,
+            { threadId: proj.threadId }
+          ).catch(() => {});
+        }
+        return;
+      }
+
+      // 2. Transição de marco importante (pronta para aprovação, homologação, homologada, bloqueada)
+      if (m.seeded && disk.phase !== prevPhase && MILESTONE_PHASES.has(disk.phase)) {
+        m.lastNotifiedPhase = disk.phase;
+        m.idleAlertSent = true;
+        if (this.chatId && run.status === "IDLE") {
+          await this.refreshCard(projectId, !run.cardMessageId).catch(() => {});
+          const tasksLabel = disk.tasks.exists ? `${disk.tasks.done}/${disk.tasks.total} [x]` : "—";
+          const icon = disk.phase === "BLOQUEADA" ? "🛑" : (disk.phase === "AGUARDANDO_APROVACAO" ? "📋" : "✅");
+          const hint = {
+            AGUARDANDO_APROVACAO: "Revise proposal.md/design.md e aprove no VS Code.",
+            PRONTA_PARA_HOMOLOGACAO: "Implementação concluída! Você pode homologar no VS Code ou revisar o diff.",
+            HOMOLOGADO: "Homologação concluída! Revise o git diff e rode concluir-change no PC.",
+            AGUARDANDO_HUMANO: "Cenários automatizados OK — há checklist humano pendente em roteiro-teste.md.",
+            BLOQUEADA: "Execução bloqueada no VS Code — confira handoff.md / entrega.md."
+          }[disk.phase] || "";
+
+          await this.tg.sendMessage(
+            this.chatId,
+            `${icon} VS Code atualizou status — ${projectId}\nChange: ${disk.changeName}\nStatus: ${disk.phase}\nTasks: ${tasksLabel} | Arquivos tocados: ${disk.dirtyCount}\n${hint}`,
+            { threadId: proj.threadId }
+          ).catch(() => {});
+        }
+        return;
+      }
+
+      if (disk.phase !== prevPhase) {
+        m.lastNotifiedPhase = disk.phase;
+      }
+    } else if (prevChange) {
+      // Change foi arquivada / concluída no VS Code!
+      m.lastChangeName = null;
+      m.lastNotifiedPhase = null;
+      if (this.chatId && run.status === "IDLE") {
+        await this.refreshCard(projectId, false).catch(() => {});
+        await this.tg.sendMessage(
+          this.chatId,
+          `🏁 Change concluída/arquivada no VS Code — ${projectId} (${prevChange}).`,
+          { threadId: proj.threadId, silent: true }
+        ).catch(() => {});
+      }
+      return;
+    }
+
+    // 3. Atualização silenciosa do Card se houve progresso em tasks/arquivos ou fim de turno
+    if ((changed || fromStopEvent) && run.status === "IDLE" && (disk.hasActiveChange || m.lastEventAt > 0)) {
+      await this.refreshCard(projectId, !run.cardMessageId).catch(() => {});
+    }
+
+    // 4. Watchdog passivo do VS Code: avisa se estava ativo via hooks e ficou em silêncio (esperando interação ou travado)
+    if (m.lastEventAt > 0 && !m.turnStopped && !m.idleAlertSent && run.status === "IDLE") {
+      const idleSec = Math.round((now - m.lastEventAt) / 1000);
+      const limitSec = m.runningLongTool
+        ? (Number(this.cfg.defaults.mirrorLongIdleSec) || 360)
+        : (Number(this.cfg.defaults.mirrorIdleSec) || 180);
+      const isTerminalPhase = disk.hasActiveChange && MILESTONE_PHASES.has(disk.phase);
+
+      if (idleSec >= limitSec && idleSec < limitSec + 600 && !isTerminalPhase) {
+        m.idleAlertSent = true;
+        const changeLabel = disk.hasActiveChange ? ` (${disk.changeName})` : "";
+        const tasksLabel = disk.hasActiveChange && disk.tasks.exists
+          ? `\nTasks: ${disk.tasks.done}/${disk.tasks.total} [x]`
+          : "";
+        await this.refreshCard(projectId, false).catch(() => {});
+        await this.tg.sendMessage(
+          this.chatId,
+          `⏸ VS Code sem novos eventos há ${fmtDuration(idleSec)} em ${projectId}${changeLabel}\nPode estar aguardando sua resposta/confirmação no PC ou travado.\nÚltimo evento: ${m.lastSummary || "—"}${tasksLabel}`,
+          {
+            threadId: proj.threadId,
+            buttons: [[
+              { text: "↻ Atualizar", callback_data: `refresh:${projectId}` },
+              { text: "📜 Eventos VS Code", callback_data: `logs:${projectId}` }
+            ]]
+          }
+        ).catch(() => {});
+      }
+    }
+  }
+
+  async handleMirrorEvent(ev) {
+    const projectId = ev.projectId;
+    if (!projectId || !this.cfg.projects[projectId]) return;
+    if (this.activeRunners.has(projectId)) return;
+
+    const proj = this.cfg.projects[projectId];
+    const run = this.getRun(projectId);
+    const m = this.getMirror(projectId);
+    const now = Date.now();
+    const name = String(ev.eventName || "");
+    const agentKey = ev.agentId || ev.agentType || null;
+    const desc = formatToolSummary(ev.toolName, ev.toolInput) || name;
+
+    const pushMirrorLog = (line) => {
+      m.logLines.push(`[${fmtClock()}] [VSCode] ${String(line).slice(0, 220)}`);
+      if (m.logLines.length > 40) m.logLines.shift();
+    };
+
+    m.lastEventAt = now;
+    m.lastEventName = name;
+    m.idleAlertSent = false;
+
+    if (name === "UserPromptSubmit") {
+      m.turnStopped = false;
+      m.runningLongTool = false;
+      m.lastSummary = ev.promptHint ? `Prompt enviado: ${ev.promptHint}` : "Novo prompt enviado no VS Code";
+      pushMirrorLog(m.lastSummary);
+    } else if (name === "SubagentStart") {
+      const id = agentKey || `sub-${now}`;
+      m.activeSubagents.set(id, {
+        id,
+        type: ev.agentType || "subagente",
+        startedAt: now,
+        lastActivityAt: now,
+        lastTool: "iniciado"
+      });
+      m.turnStopped = false;
+      m.lastSummary = `Subagente iniciado: ${ev.agentType || id}`;
+      pushMirrorLog(m.lastSummary);
+    } else if (name === "SubagentStop") {
+      if (agentKey && m.activeSubagents.has(agentKey)) {
+        m.activeSubagents.delete(agentKey);
+      } else if (m.activeSubagents.size > 0) {
+        m.activeSubagents.delete(m.activeSubagents.keys().next().value);
+      }
+      m.runningLongTool = false;
+      m.lastSummary = `Subagente concluído: ${ev.agentType || "subagente"}`;
+      pushMirrorLog(m.lastSummary);
+    } else if (name === "PreToolUse") {
+      m.turnStopped = false;
+      m.runningLongTool = ev.toolName === "Bash" || ev.toolName === "Task";
+      if (agentKey && m.activeSubagents.has(agentKey)) {
+        const s = m.activeSubagents.get(agentKey);
+        s.lastActivityAt = now;
+        s.lastTool = desc;
+      }
+      m.lastSummary = `Executando ${desc}`;
+      pushMirrorLog(`PreToolUse ${desc}`);
+    } else if (name === "PostToolUse") {
+      m.turnStopped = false;
+      m.runningLongTool = false;
+      if (agentKey && m.activeSubagents.has(agentKey)) {
+        const s = m.activeSubagents.get(agentKey);
+        s.lastActivityAt = now;
+        s.lastTool = `OK: ${desc}`;
+      }
+      m.lastSummary = `OK: ${desc}`;
+      pushMirrorLog(`PostToolUse ${desc}`);
+    } else if (name === "PermissionRequest") {
+      m.turnStopped = false;
+      m.idleAlertSent = true;
+      m.lastSummary = `Aguardando permissão no VS Code: ${desc}`;
+      pushMirrorLog(`PermissionRequest ${desc}`);
+
+      const detail = ev.toolInput && ev.toolInput.command
+        ? ev.toolInput.command
+        : JSON.stringify(ev.toolInput || {}, null, 2).slice(0, 600);
+
+      await this.refreshCard(projectId, !run.cardMessageId).catch(() => {});
+      await this.tg.sendMessage(
+        this.chatId,
+        `🔐 VS Code aguardando sua permissão — ${projectId}\nFerramenta: ${desc}\nAlvo:\n${detail}\n\n(Aprove ou negue diretamente na tela do VS Code.)`,
+        { threadId: proj.threadId }
+      ).catch(() => {});
+      return;
+    } else if (name === "StopFailure") {
+      m.turnStopped = true;
+      m.runningLongTool = false;
+      m.idleAlertSent = true;
+      const errBlob = [ev.error, ev.errorDetails, ev.lastAssistantMessage].filter(Boolean).join(" | ");
+      const isQuota = /rate.?limit|usage.?limit|hit your .*limit|429/i.test(errBlob);
+      m.lastSummary = isQuota
+        ? `Cota do Claude atingida (${errBlob.slice(0, 120)})`
+        : `Falha no VS Code: ${errBlob || "StopFailure"}`;
+      pushMirrorLog(m.lastSummary);
+
+      // Recarrega .jsonl imediatamente para pegar resetsAt exato
+      const cs = inspectClaudeSession(proj.path);
+      m.claudeSession = cs;
+      if (isQuota && cs.found && cs.quotaInfo) {
+        m.lastNotifiedQuotaId = cs.quotaInfo.eventId;
+        if (cs.quotaInfo.resetsAt) {
+          m.pendingQuotaResetAt = cs.quotaInfo.resetsAt;
+          m.quotaNotifiedResetLabel = fmtResetTime(cs.quotaInfo.resetsAt);
+        }
+      }
+      const resetNote = (isQuota && cs.found && cs.quotaInfo && cs.quotaInfo.resetsAt)
+        ? `\nReset previsto: ${fmtResetTime(cs.quotaInfo.resetsAt)}`
+        : "";
+
+      await this.refreshCard(projectId, !run.cardMessageId).catch(() => {});
+      await this.tg.sendMessage(
+        this.chatId,
+        isQuota
+          ? `⏳ Cota do Claude atingida no VS Code — ${projectId}${resetNote}\nDetalhe: ${errBlob.slice(0, 260)}`
+          : `❌ Falha detectada na sessão VS Code — ${projectId}\nDetalhe: ${errBlob || "StopFailure"}`,
+        { threadId: proj.threadId }
+      ).catch(() => {});
+      return;
+    } else if (name === "Stop") {
+      m.turnStopped = true;
+      m.runningLongTool = false;
+      m.activeSubagents.clear();
+      m.lastSummary = "Turno concluído no VS Code (aguardando próximo passo)";
+      pushMirrorLog("Stop (turno finalizado)");
+      await this.pollMirrorProject(projectId, true);
+      return;
+    } else {
+      m.lastSummary = desc;
+      pushMirrorLog(`${name}: ${desc}`);
+    }
+
+    appendEvent({ type: "mirror", projectId, event: name, tool: ev.toolName, agent: ev.agentType });
+
+    // Aviso curto na primeira atividade detectada da sessão VS Code (cooldown 15 min)
+    if (name !== "Stop" && (now - m.sessionNotifiedAt > 15 * 60 * 1000) && run.status === "IDLE") {
+      m.sessionNotifiedAt = now;
+      m.disk = inspectMainCheckout(proj.path);
+      const changeInfo = m.disk && m.disk.hasActiveChange ? `\nChange: ${m.disk.changeName} (${m.disk.phase})` : "";
+      await this.tg.sendMessage(
+        this.chatId,
+        `👀 Sessão ativa no VS Code — ${projectId}${changeInfo}\nAtividade: ${m.lastSummary}`,
+        { threadId: proj.threadId }
+      ).catch(() => {});
+      await this.refreshCard(projectId, true).catch(() => {});
+      m.lastCardPushAt = now;
+      return;
+    }
+
+    // Throttle de atualização silenciosa do card (8s em rajadas, imediato em subagentes)
+    const urgentCard = name === "SubagentStart" || name === "SubagentStop";
+    if (run.status === "IDLE" && (urgentCard || now - m.lastCardPushAt >= 8000)) {
+      m.lastCardPushAt = now;
+      m.disk = inspectMainCheckout(proj.path);
+      await this.refreshCard(projectId, !run.cardMessageId).catch(() => {});
+    }
   }
 
   async recoverInterruptedRuns() {
@@ -172,40 +619,190 @@ class WorkerOrchestrator {
     const runner = this.activeRunners.get(projectId);
     const snap = runner ? runner.getSnapshot() : null;
 
+    // --- Visão Modo Espelho (quando worker está ocioso mas há atividade/change no VS Code) ---
+    if (!snap && run.status === "IDLE" && proj && fs.existsSync(proj.path)) {
+      const m = this.getMirror(projectId);
+      const diskWindowSec = Number(this.cfg.defaults.diskActiveWindowSec) || 120;
+      const disk = inspectMainCheckout(proj.path, diskWindowSec);
+      const cs = inspectClaudeSession(proj.path);
+      const agy = inspectAntigravityGlobal(diskWindowSec);
+      m.disk = disk;
+      m.claudeSession = cs;
+      m.antigravityGlobal = agy;
+
+      const now = Date.now();
+      const hookIdleSec = m.lastEventAt > 0 ? Math.max(0, Math.round((now - m.lastEventAt) / 1000)) : null;
+      const hookLimitSec = m.runningLongTool
+        ? (Number(this.cfg.defaults.mirrorLongIdleSec) || 360)
+        : (Number(this.cfg.defaults.mirrorIdleSec) || 180);
+      const liveClaudeHook = hookIdleSec != null && !m.turnStopped && hookIdleSec <= hookLimitSec;
+      const recentClaudeHook = hookIdleSec != null && hookIdleSec < 15 * 60;
+
+      // .jsonl prevalece para cota/erro a menos que um hook mais novo que o registro de cota/erro prove retomada
+      const quotaTsMs = (cs.found && cs.quotaInfo && cs.quotaInfo.timestampMs) || 0;
+      const errorTsMs = (cs.found && cs.apiErrorInfo && cs.apiErrorInfo.timestampMs) || 0;
+      const hookAfterQuota = m.lastEventAt > (quotaTsMs + 1500);
+      const hookAfterError = m.lastEventAt > (errorTsMs + 1500);
+      const claudeQuotaHit = cs.found && cs.status === "QUOTA_EXHAUSTED" && !hookAfterQuota;
+      const claudeQuotaResetReady = cs.found && cs.status === "QUOTA_RESET_READY" && !hookAfterQuota;
+      const claudeApiError = cs.found && cs.status === "API_ERROR" && !hookAfterError;
+      const liveClaudeJsonl = cs.found && cs.status === "RUNNING";
+      const liveDisk = Boolean(disk.diskRecentlyActive);
+
+      const agyPhase = disk.hasActiveChange && ["01-Explorar", "02-Propor", "05-Homologar", "PRONTA_PARA_HOMOLOGACAO", "AGUARDANDO_APROVACAO"].includes(disk.phase);
+      const liveAntigravity = Boolean(
+        (liveDisk && disk.latestActivity && (disk.latestActivity.kind === "spec" || disk.latestActivity.kind === "qa")) ||
+        (agy.recentlyActive && agyPhase && !liveClaudeHook && !liveClaudeJsonl)
+      );
+
+      if (claudeQuotaHit || claudeQuotaResetReady || claudeApiError || liveClaudeHook || liveClaudeJsonl || liveAntigravity || liveDisk || disk.hasActiveChange || recentClaudeHook) {
+        let statusLine;
+        if (claudeQuotaHit) {
+          const rStr = cs.quotaInfo && cs.quotaInfo.resetsAt ? ` — reset ${fmtResetTime(cs.quotaInfo.resetsAt)}` : "";
+          statusLine = `⏳ PARADO (COTA ESGOTADA${rStr})`;
+        } else if (claudeApiError) {
+          statusLine = `❌ PARADO (Erro API Claude: ${cs.apiErrorInfo.code})`;
+        } else if (liveClaudeHook) {
+          statusLine = "🟢 RODANDO (VS Code · hook ao vivo)";
+        } else if (liveClaudeJsonl) {
+          statusLine = "🟢 RODANDO (VS Code · log da sessão)";
+        } else if (liveAntigravity) {
+          statusLine = "🟢 RODANDO (VS Code · Antigravity)";
+        } else if (liveDisk) {
+          statusLine = "🟢 RODANDO (VS Code · atividade em disco)";
+        } else if (claudeQuotaResetReady) {
+          const rStr = cs.quotaInfo && cs.quotaInfo.resetsAt ? ` às ${fmtResetTime(cs.quotaInfo.resetsAt)}` : "";
+          statusLine = `🟡 PARADO (Cota renovou${rStr} · pronto p/ retomar)`;
+        } else if (disk.hasActiveChange && disk.phase === "BLOQUEADA") {
+          statusLine = "🛑 PARADO (VS Code · BLOQUEADA)";
+        } else if (disk.hasActiveChange && disk.phase === "HOMOLOGADO") {
+          statusLine = "✅ PARADO (Homologado · rodar concluir-change no PC)";
+        } else if (disk.hasActiveChange && disk.phase === "AGUARDANDO_APROVACAO") {
+          statusLine = "🟠 PARADO (Aguardando sua aprovação da proposta)";
+        } else if (disk.hasActiveChange && disk.phase === "PRONTA_PARA_HOMOLOGACAO") {
+          statusLine = "🟡 PARADO (Implementação concluída · falta homologar)";
+        } else if (disk.hasActiveChange && disk.phase === "AGUARDANDO_HUMANO") {
+          statusLine = "🟡 PARADO (Aguardando validação humana no roteiro)";
+        } else if (m.turnStopped && recentClaudeHook) {
+          statusLine = "⏸ PARADO (VS Code · turno encerrado)";
+        } else {
+          statusLine = "⏸ PARADO (VS Code · sem atividade recente)";
+        }
+
+        // Identifica claramente qual IA está atuando (Claude vs Gemini/Antigravity)
+        let iaLine;
+        if (claudeQuotaHit) {
+          const lim = cs.quotaInfo ? cs.quotaInfo.limitLabel : "limite de cota";
+          iaLine = `IA atual: Claude Code (VS Code · ${lim})`;
+        } else if (claudeApiError) {
+          iaLine = "IA atual: Claude Code (VS Code · erro de API)";
+        } else if (liveClaudeHook) {
+          if (m.activeSubagents.size > 0) {
+            const subs = Array.from(m.activeSubagents.values());
+            const lastSub = subs[subs.length - 1];
+            const subElapsed = Math.round((now - lastSub.startedAt) / 1000);
+            iaLine = `IA atual: Claude Code (Subagente: ${lastSub.type} · ${fmtDuration(subElapsed)})`;
+          } else {
+            iaLine = "IA atual: Claude Code (VS Code)";
+          }
+        } else if (liveClaudeJsonl) {
+          iaLine = `IA atual: Claude Code (VS Code${cs.model ? ` · ${cs.model}` : ""})`;
+        } else if (liveAntigravity) {
+          iaLine = "IA atual: Gemini / Antigravity (VS Code)";
+        } else if (liveDisk) {
+          const iaName = disk.inferredActiveIa || "Claude Code";
+          iaLine = `IA atual: ${iaName} (inferida por escrita recente)`;
+        } else if (claudeQuotaResetReady) {
+          iaLine = "IA atual: Claude Code (VS Code · cota renovada)";
+        } else if (disk.hasActiveChange) {
+          iaLine = `IA da etapa: ${disk.ownerIa || "Multi-IA"}`;
+        } else {
+          iaLine = "IA recente: Claude Code (VS Code)";
+        }
+
+        const lines = [
+          `📦 ${projectId}${disk.hasActiveChange ? ` · ${disk.changeName}` : ""}`,
+          `Status: ${statusLine}`,
+          iaLine
+        ];
+
+        if (disk.hasActiveChange) {
+          const blockPart = disk.tasks && disk.tasks.currentBlock ? ` · ${disk.tasks.currentBlock}` : "";
+          const stageName = ((liveClaudeHook || liveClaudeJsonl) && disk.phase === "BLOQUEADA")
+            ? "04-Aplicar Change (retomado)"
+            : (disk.stageLabel || disk.phase);
+          lines.push(`Etapa: ${stageName}${blockPart}`);
+          if (disk.tasks && disk.tasks.exists) {
+            lines.push(`Tasks: ${disk.tasks.done}/${disk.tasks.total} [x] (${disk.tasks.pct}%)`);
+          }
+        }
+
+        if (claudeQuotaHit && cs.quotaInfo) {
+          const rStr = cs.quotaInfo.resetsAt ? ` (reset ${fmtResetTime(cs.quotaInfo.resetsAt)})` : "";
+          lines.push(`Última atividade: há ${fmtDuration(cs.idleSec)} · Cota atingida${rStr}`);
+        } else if (liveClaudeHook) {
+          lines.push(`Última atividade: há ${fmtDuration(hookIdleSec)} · ${m.lastSummary || "—"}`);
+        } else if (liveClaudeJsonl) {
+          lines.push(`Última atividade: há ${fmtDuration(cs.idleSec)} · ${cs.lastTool || cs.lastTextSnippet || "processando..."}`);
+        } else if (liveAntigravity && agy.found && agy.idleSec != null && (!disk.latestActivity || disk.latestActivity.idleSec == null || agy.idleSec <= disk.latestActivity.idleSec)) {
+          lines.push(`Última atividade: há ${fmtDuration(agy.idleSec)} · Antigravity (${agy.sourceFile})`);
+        } else if (disk.latestActivity && disk.latestActivity.shortFile && disk.latestActivity.idleSec != null) {
+          lines.push(`Última atividade: há ${fmtDuration(disk.latestActivity.idleSec)} · ${disk.latestActivity.shortFile}`);
+        } else if (recentClaudeHook) {
+          lines.push(`Última atividade: há ${fmtDuration(hookIdleSec)} · ${m.lastSummary || "—"}`);
+        }
+
+        const riskPart = disk.risk ? ` | Risco: ${disk.risk.toUpperCase()}` : "";
+        lines.push(`Checkout (${disk.branch}): ${disk.dirtyCount} arq. tocado(s)${riskPart}`);
+        lines.push(`Verificado às ${fmtClock()}`);
+        return lines.join("\n");
+      }
+    }
+
+    // --- Visão Padrão do Worker (execução gerenciada pelo Telegram) ---
     const statusIcon = {
-      IDLE: "⚪ OCIOSO",
-      RUNNING: "🟢 RODANDO",
-      WAITING_USER_INPUT: "🟡 AGUARDANDO RESPOSTA",
-      WAITING_APPROVAL: "🟠 AGUARDANDO APROVAÇÃO",
-      WAITING_PC_APPROVAL: "🔴 RISCO ALTO — REVISAR NO PC",
-      PAUSED: "⏸ PAUSADO",
-      PAUSED_QUOTA: "⏳ COTA ESGOTADA",
-      INTERRUPTED: "⚠️ INTERROMPIDO",
-      PRONTO_REVISAO: "✅ PRONTO PARA REVISÃO NO PC",
-      BLOCKED: "🛑 BLOQUEADO"
+      IDLE: "⚪ PARADO (OCIOSO)",
+      RUNNING: "🟢 RODANDO (Worker)",
+      WAITING_USER_INPUT: "🟡 PARADO (Aguardando sua resposta)",
+      WAITING_APPROVAL: "🟠 PARADO (Aguardando aprovação)",
+      WAITING_PC_APPROVAL: "🔴 PARADO (Risco HIGH — revisar no PC)",
+      PAUSED: "⏸ PARADO (Pausado)",
+      PAUSED_QUOTA: "⏳ PARADO (Cota esgotada)",
+      INTERRUPTED: "⚠️ PARADO (Interrompido)",
+      PRONTO_REVISAO: "✅ PARADO (Pronto para revisão no PC)",
+      BLOCKED: "🛑 PARADO (Bloqueado)"
     }[run.status] || run.status;
 
     const lines = [
       `📦 ${projectId}${run.changeName ? ` · ${run.changeName}` : ""}`,
-      `Estado: ${statusIcon}${run.stage ? ` · ${run.stage}` : ""}`
+      `Status: ${statusIcon}`
     ];
 
     if (snap) {
       const pidLabel = snap.pid ? `PID ${snap.pid} (${snap.alive ? "vivo" : "morto"})` : "sem PID";
-      lines.push(`IA: ${run.iaLabel || snap.kind} | ${pidLabel}`);
-      if (snap.subagents.length > 0) {
-        const s = snap.subagents[snap.subagents.length - 1];
-        lines.push(`Subagente ativo: ${s.type} (${fmtDuration(s.elapsedSec)} | último: ${s.lastTool})`);
-      }
-      lines.push(`Última saída real: há ${fmtDuration(snap.idleSec)} · ${snap.lastSummary}`);
-      lines.push(`Tempo na etapa: ${fmtDuration(snap.elapsedSec)}`);
+      const iaBase = run.iaLabel || (snap.kind === "claude" ? "Claude CLI" : "Gemini / Antigravity CLI");
+      const subSuffix = snap.subagents.length > 0
+        ? ` · Subagente: ${snap.subagents[snap.subagents.length - 1].type}`
+        : "";
+      lines.push(`IA atual: ${iaBase}${subSuffix} | ${pidLabel}`);
+      if (run.stage) lines.push(`Etapa: ${run.stage} (${fmtDuration(snap.elapsedSec)})`);
+      lines.push(`Última atividade: há ${fmtDuration(snap.idleSec)} · ${snap.lastSummary}`);
     } else {
+      if (run.iaLabel) lines.push(`Última IA: ${run.iaLabel}`);
+      if (run.stage) lines.push(`Etapa: ${run.stage}`);
       lines.push(`Resumo: ${run.lastSummary || "Sem atividade"}`);
     }
 
     if (run.worktreePath && fs.existsSync(run.worktreePath)) {
+      if (run.changeName) {
+        const wtTasks = parseTasksProgress(path.join(run.worktreePath, "openspec", "changes", run.changeName, "tasks.md"));
+        if (wtTasks.exists) {
+          const blk = wtTasks.currentBlock ? ` · ${wtTasks.currentBlock}` : "";
+          lines.push(`Tasks: ${wtTasks.done}/${wtTasks.total} [x] (${wtTasks.pct}%)${blk}`);
+        }
+      }
       const dirty = listDirtyFiles(run.worktreePath).length;
-      lines.push(`Worktree: ${run.branchName || "—"} (${dirty} arquivo(s) tocado(s))`);
+      lines.push(`Worktree: ${run.branchName || "—"} (${dirty} arq. tocado(s))`);
     }
 
     if (run.risk) {
@@ -251,6 +848,10 @@ class WorkerOrchestrator {
     if (run.status === "INTERRUPTED" || run.status === "PAUSED" || run.status === "PAUSED_QUOTA" || run.status === "BLOCKED") {
       return [row1, [{ text: "▶ Retomar via handoff", callback_data: `resume:${projectId}` }]];
     }
+    const m = this.getMirror(projectId);
+    if (m.logLines.length > 0) {
+      return [row1, [{ text: "📜 Eventos VS Code", callback_data: `logs:${projectId}` }]];
+    }
     return [row1];
   }
 
@@ -268,6 +869,7 @@ class WorkerOrchestrator {
       } catch (_) {}
     }
 
+    const previousCardId = run.cardMessageId;
     const msg = await this.tg.sendMessage(this.chatId, text, {
       threadId: proj.threadId,
       silent: true,
@@ -277,6 +879,9 @@ class WorkerOrchestrator {
       run.cardMessageId = msg.message_id;
       this.persist();
       await this.tg.pinMessage(this.chatId, msg.message_id);
+      if (previousCardId && Number(previousCardId) !== Number(msg.message_id)) {
+        await this.tg.deleteMessage(this.chatId, previousCardId).catch(() => {});
+      }
     }
   }
 
@@ -380,11 +985,38 @@ class WorkerOrchestrator {
 
     if (!proj) {
       if (cmd === "/status") {
-        const lines = ["📊 Painel Geral — AI-Kit Worker v2.2"];
-        for (const id of Object.keys(this.cfg.projects || {})) {
+        const lines = ["📊 Painel Geral — AI-Kit Worker v2.2.5"];
+        const diskWindowSec = Number(this.cfg.defaults.diskActiveWindowSec) || 120;
+        for (const [id, p] of Object.entries(this.cfg.projects || {})) {
           const r = this.getRun(id);
-          const alive = r.pid ? (isPidAlive(r.pid) ? "vivo" : "morto") : "—";
-          lines.push(`• ${id}: ${r.status}${r.changeName ? ` (${r.changeName})` : ""} [PID ${alive}]`);
+          if (this.activeRunners.has(id) || r.status !== "IDLE") {
+            const running = this.activeRunners.has(id);
+            const tag = running ? "🟢 RODANDO" : `⏸ PARADO (${r.status})`;
+            lines.push(`• ${id}: ${tag} | ${r.iaLabel || "Worker"} | ${r.stage || "—"}`);
+          } else {
+            const m = this.getMirror(id);
+            const disk = fs.existsSync(p.path) ? inspectMainCheckout(p.path, diskWindowSec) : { hasActiveChange: false };
+            const cs = fs.existsSync(p.path) ? inspectClaudeSession(p.path) : { found: false };
+            const agy = inspectAntigravityGlobal(diskWindowSec);
+            const liveHook = m.lastEventAt > 0 && (Date.now() - m.lastEventAt) < 180000 && !m.turnStopped;
+            const liveJsonl = cs.found && cs.status === "RUNNING";
+            const quotaTs = (cs.found && cs.quotaInfo && cs.quotaInfo.timestampMs) || 0;
+            const quotaHit = cs.found && cs.status === "QUOTA_EXHAUSTED" && !(m.lastEventAt > quotaTs + 1500);
+            const liveDisk = Boolean(disk.diskRecentlyActive);
+            if (quotaHit) {
+              const rStr = cs.quotaInfo && cs.quotaInfo.resetsAt ? ` reset ${fmtResetTime(cs.quotaInfo.resetsAt)}` : "";
+              const tInfo = disk.hasActiveChange && disk.tasks.exists ? ` · ${disk.tasks.done}/${disk.tasks.total} (${disk.tasks.pct}%)` : "";
+              lines.push(`• ${id}: ⏳ COTA ESGOTADA (${rStr.trim() || "Claude"}) | ${disk.stageLabel || disk.phase || "VS Code"}${tInfo}`);
+            } else if (liveHook || liveJsonl || liveDisk || disk.hasActiveChange) {
+              const running = liveHook || liveJsonl || liveDisk;
+              const stateTag = running ? "🟢 RODANDO" : "⏸ PARADO";
+              const iaTag = (liveHook || liveJsonl) ? "Claude" : (liveDisk ? (disk.inferredActiveIa || (agy.recentlyActive ? "Antigravity" : "Claude")) : (disk.ownerIa || "Multi-IA"));
+              const tInfo = disk.hasActiveChange && disk.tasks.exists ? ` · ${disk.tasks.done}/${disk.tasks.total} (${disk.tasks.pct}%)` : "";
+              lines.push(`• ${id}: ${stateTag} (VS Code) | ${iaTag} | ${disk.stageLabel || disk.phase || "ativo"}${tInfo}`);
+            } else {
+              lines.push(`• ${id}: ⚪ PARADO (ocioso)`);
+            }
+          }
         }
         await this.tg.sendMessage(chatId, lines.join("\n"), { threadId, silent: true });
         return;
@@ -398,7 +1030,7 @@ class WorkerOrchestrator {
     }
 
     if (cmd === "/status") {
-      await this.refreshCard(proj.id, !this.getRun(proj.id).cardMessageId);
+      await this.refreshCard(proj.id, true);
       return;
     }
     if (cmd === "/fila") {
@@ -470,15 +1102,19 @@ class WorkerOrchestrator {
     }
 
     const projectId = p1;
-    const proj = this.cfg.projects[projectId];
-    if (!proj) {
+    const rawProj = this.cfg.projects[projectId];
+    if (!rawProj) {
       await this.tg.answerCallback(cb.id, "Projeto não encontrado.", true);
       return;
     }
+    const proj = { id: projectId, ...rawProj };
 
     if (action === "refresh") {
-      await this.refreshCard(projectId, false);
-      await this.tg.answerCallback(cb.id, `Atualizado às ${fmtClock()}`);
+      const run = this.getRun(projectId);
+      const clickedMsgId = cb.message && cb.message.message_id;
+      const isCurrentCard = Boolean(run.cardMessageId && clickedMsgId && Number(run.cardMessageId) === Number(clickedMsgId));
+      await this.refreshCard(projectId, !isCurrentCard);
+      await this.tg.answerCallback(cb.id, isCurrentCard ? `Card atualizado às ${fmtClock()}` : `Novo Card enviado às ${fmtClock()}`);
       return;
     }
     if (action === "logs") {
@@ -547,28 +1183,47 @@ class WorkerOrchestrator {
   helpText(proj) {
     const scope = proj ? `Projeto do tópico: ${proj.id} (${proj.path})` : "Tópico Geral";
     return [
-      `🤖 AI-Kit Worker v2.2 — ${scope}`,
+      `🤖 AI-Kit Worker v2.2.5 — ${scope}`,
       "",
-      "/status — Força atualização ao vivo do Card (PID, subagente, cota)",
+      "/status — Força atualização ao vivo do Card (Worker ou VS Code espelhado)",
       "/fila — Lista próximas fatias pendentes",
       "/explorar <slug> — Roda openspec-explore (você responde em texto livre no tópico)",
       "/iniciar <slug> — Cria worktree, propõe + revisa spec (pausa para OK)",
       "/homologar — Roda homologar-change + telemetria determinística",
-      "/telemetria — Roda ai-kit telemetry no worktree ativo",
-      "/logs — Últimas 25 linhas do agente",
+      "/telemetria — Roda ai-kit telemetry (worktree ou checkout principal)",
+      "/logs — Últimas 25 linhas do agente (Worker ou VS Code)",
       "/pausar · /retomar · /abortar",
       "",
-      "Regra v2.2: risco HIGH e concluir-change (merge na main) são exclusivos do PC."
+      "Modo Espelho ativo: sessões iniciadas no VS Code aparecem automaticamente no Card e avisam quando precisarem de você ou concluírem."
     ].join("\n");
   }
 
   async sendLogs(proj) {
     const runner = this.activeRunners.get(proj.id);
-    const lines = runner ? runner.logLines.slice(-25) : [];
-    const text = lines.length > 0
-      ? `📜 Últimas ${lines.length} linhas — ${proj.id}:\n\n${lines.join("\n")}`
-      : `Sem processo ativo no momento em ${proj.id}.`;
-    await this.tg.sendMessage(this.chatId, text, { threadId: proj.threadId, silent: true });
+    if (runner && runner.logLines.length > 0) {
+      const lines = runner.logLines.slice(-25);
+      await this.tg.sendMessage(
+        this.chatId,
+        `📜 Últimas ${lines.length} linhas (Worker) — ${proj.id}:\n\n${lines.join("\n")}`,
+        { threadId: proj.threadId, silent: true }
+      );
+      return;
+    }
+    const m = this.getMirror(proj.id);
+    if (m.logLines.length > 0) {
+      const lines = m.logLines.slice(-25);
+      await this.tg.sendMessage(
+        this.chatId,
+        `📜 Últimos ${lines.length} eventos (VS Code espelhado) — ${proj.id}:\n\n${lines.join("\n")}`,
+        { threadId: proj.threadId, silent: true }
+      );
+      return;
+    }
+    await this.tg.sendMessage(
+      this.chatId,
+      `Sem eventos recentes registrados em ${proj.id}.`,
+      { threadId: proj.threadId, silent: true }
+    );
   }
 
   async sendTelemetry(proj) {
@@ -723,7 +1378,7 @@ class WorkerOrchestrator {
         `Ao final, escreva openspec/changes/${run.changeName}/exploracao.md e liste objetivamente qualquer pergunta bloqueante para o usuário responder.`
       ].join("\n");
 
-      const args = buildAgyArgs(prompt, "explore", this.cfg.defaults, proj);
+      const args = buildAgyArgs(prompt, "explore", this.cfg.defaults, { ...proj, agyLogFile: path.join(WORKER_HOME, "logs", `agy-${proj.id}.log`) });
       const res = await this.executeRunner(proj, {
         kind: "agy",
         args,
@@ -748,7 +1403,7 @@ class WorkerOrchestrator {
       "Atualize exploracao.md e handoff.md. Não edite código de aplicação. Informe se já está pronto para openspec-propose ou se ainda há dúvida bloqueante."
     ].join("\n");
 
-    const args = buildAgyArgs(prompt, "explore", this.cfg.defaults, proj);
+    const args = buildAgyArgs(prompt, "explore", this.cfg.defaults, { ...proj, agyLogFile: path.join(WORKER_HOME, "logs", `agy-${proj.id}.log`) });
     const res = await this.executeRunner(proj, {
       kind: "agy",
       args,
@@ -806,7 +1461,7 @@ class WorkerOrchestrator {
         "NUNCA edite código de aplicação."
       ].join("\n");
 
-      const args = buildAgyArgs(prompt, "propose", this.cfg.defaults, proj);
+      const args = buildAgyArgs(prompt, "propose", this.cfg.defaults, { ...proj, agyLogFile: path.join(WORKER_HOME, "logs", `agy-${proj.id}.log`) });
       const res = await this.executeRunner(proj, {
         kind: "agy",
         args,
@@ -958,7 +1613,7 @@ class WorkerOrchestrator {
       "NUNCA edite código-fonte, NUNCA arquive e NUNCA faça commit/push."
     ].join("\n");
 
-    const args = buildAgyArgs(prompt, "homologar", this.cfg.defaults, proj);
+    const args = buildAgyArgs(prompt, "homologar", this.cfg.defaults, { ...proj, agyLogFile: path.join(WORKER_HOME, "logs", `agy-${proj.id}.log`) });
     const res = await this.executeRunner(proj, {
       kind: "agy",
       args,
