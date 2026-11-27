@@ -77,7 +77,6 @@
       "MultiEdit(**/openspec/changes/*/proposal.md)",
       "MultiEdit(**/openspec/changes/*/design.md)",
       "MultiEdit(**/openspec/changes/*/specs/**)",
-      "Read(.tmp/**)",
       "Read(.ai-kit-backup/**)",
       "Read(**/playwright-report/**)",
       "Read(**/test-results/**)"
